@@ -1,3 +1,0 @@
-
-install:
-	go install ./cmd/...
