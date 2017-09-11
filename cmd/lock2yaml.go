@@ -24,7 +24,9 @@ var (
 )
 
 func init() {
-	Lock2YamlCmd.Flags().StringP(FlagLockSrc, "l", "glide.lock", "read an external .lock file besides the one in the working directory")
+	Lock2YamlCmd.Flags().StringP(FlagLockSrc, "l", "glide.lock",
+		"read an external .lock file besides the one in the working directory")
+	viper.BindPFlag(FlagLockSrc, Lock2YamlCmd.Flags().Lookup(FlagLockSrc))
 	RootCmd.AddCommand(Lock2YamlCmd)
 }
 
@@ -39,6 +41,7 @@ func lock2YamlCmd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	lock, err := common.ReadLines(viper.GetString(FlagLockSrc))
+	//lock, err := common.ReadLines("glide.lock")
 	if err != nil {
 		return err
 	}

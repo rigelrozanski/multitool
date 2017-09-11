@@ -11,4 +11,4 @@ Example usage (once navigated to a repo directory with the glide files) run:
 `multitool lock2yaml github.com/tendermint` this will update all the versions
 which have been set in the yaml  related to tendermint to the lock hash from
 the current lock file... you could also get more specific and do something like
-`multitool lock2hash github.com/tendermint/go-wire`
+`multitool lock2yaml github.com/tendermint/go-wire`
