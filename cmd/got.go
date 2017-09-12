@@ -48,7 +48,7 @@ var (
 		RunE:  depCmd,
 	}
 
-	flagPath   = "path"
+	flagPath   = "work-path"
 	flagDepth  = "depth"
 	flagLocal  = "local"
 	flagVendor = "vendor"
@@ -95,6 +95,7 @@ func replaceCmd(cmd *cobra.Command, args []string) error {
 	newS := args[1]
 	dir := viper.GetString(flagPath)
 	depth := viper.GetInt(flagDepth)
+	//panic(fmt.Sprintf("%v,,,,, %v", dir, depth))
 	return replace(dir, oldS, newS, depth)
 }
 
