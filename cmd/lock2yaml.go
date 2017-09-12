@@ -15,18 +15,18 @@ import (
 var (
 	Lock2YamlCmd = &cobra.Command{
 		Use:   "lock2yaml [import-root]",
-		Short: "set the glide yaml version to the hash from the lock file",
+		Short: "Set the glide yaml version to the hash from the lock file",
 		RunE:  lock2YamlCmd,
 	}
 
 	//flags
-	FlagLockSrc = "lockSrc"
+	flagLockSrc = "lockSrc"
 )
 
 func init() {
-	Lock2YamlCmd.Flags().StringP(FlagLockSrc, "l", "glide.lock",
+	Lock2YamlCmd.Flags().StringP(flagLockSrc, "l", "glide.lock",
 		"read an external .lock file besides the one in the working directory")
-	viper.BindPFlag(FlagLockSrc, Lock2YamlCmd.Flags().Lookup(FlagLockSrc))
+	viper.BindPFlag(flagLockSrc, Lock2YamlCmd.Flags().Lookup(flagLockSrc))
 	RootCmd.AddCommand(Lock2YamlCmd)
 }
 
@@ -40,7 +40,7 @@ func lock2YamlCmd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	lock, err := common.ReadLines(viper.GetString(FlagLockSrc))
+	lock, err := common.ReadLines(viper.GetString(flagLockSrc))
 	//lock, err := common.ReadLines("glide.lock")
 	if err != nil {
 		return err
