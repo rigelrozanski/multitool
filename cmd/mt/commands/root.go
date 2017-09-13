@@ -1,4 +1,4 @@
-package cmd
+package commands
 
 import (
 	"fmt"
@@ -13,8 +13,8 @@ var cfgFile string
 
 // RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
-	Use:   "multitool",
-	Short: "A collection of handy lil tools",
+	Use:   "mt",
+	Short: "multitool, a collection of handy lil tools",
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

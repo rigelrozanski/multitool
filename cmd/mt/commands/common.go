@@ -1,4 +1,4 @@
-package cmd
+package commands
 
 import (
 	"bytes"
@@ -35,9 +35,12 @@ func replace(dir, oldS, newS string, depth int) error {
 		}
 		p := path.Join(dir, name)
 		if f.IsDir() {
-			if err := replace(p, oldS, newS, depth-1); err != nil {
-				return err
+			if name != "vendor" {
+				if err := replace(p, oldS, newS, depth-1); err != nil {
+					return err
+				}
 			}
+			//TODO make suffixes optional & extensible
 		} else if strings.HasSuffix(name, ".go") || strings.HasSuffix(name, ".md") {
 			replaceStringInFile(f, dir, oldS, newS)
 		}

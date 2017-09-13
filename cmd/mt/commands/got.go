@@ -1,4 +1,4 @@
-package cmd
+package commands
 
 import (
 	"fmt"
@@ -22,10 +22,10 @@ var (
 		Use:   "got",
 		Short: "Ebuchmans got tool",
 	}
-	ReplaceCmd = &cobra.Command{
-		Use:   "replace [oldStr] [newStr]",
+	RepCmd = &cobra.Command{
+		Use:   "rep [oldStr] [newStr]",
 		Short: "String replace on all files in the directory tree",
-		RunE:  replaceCmd,
+		RunE:  repCmd,
 	}
 	PullCmd = &cobra.Command{
 		Use:   "pull [oldStr] [newStr]",
@@ -66,7 +66,7 @@ func init() {
 	fsDep.BoolP(flagVendor, "v", false,
 		"set the import path to the vendored location (a mirror of $GOPATH within the current repo)")
 
-	ReplaceCmd.Flags().AddFlagSet(fsReplace)
+	RepCmd.Flags().AddFlagSet(fsReplace)
 	DepCmd.Flags().AddFlagSet(fsDep)
 
 	viper.BindPFlag(flagPath, fsDep.Lookup(flagPath))
@@ -75,7 +75,7 @@ func init() {
 	viper.BindPFlag(flagVendor, fsDep.Lookup(flagVendor))
 
 	GotCmd.AddCommand(
-		ReplaceCmd,
+		RepCmd,
 		PullCmd,
 		CheckoutCmd,
 		BranchCmd,
@@ -83,11 +83,11 @@ func init() {
 	)
 
 	RootCmd.AddCommand(GotCmd)
-	RootCmd.AddCommand(ReplaceCmd)
+	RootCmd.AddCommand(RepCmd)
 }
 
 // replace a line of text in every file with another
-func replaceCmd(cmd *cobra.Command, args []string) error {
+func repCmd(cmd *cobra.Command, args []string) error {
 	if len(args) < 2 {
 		return fmt.Errorf("command needs 2 args")
 	}
