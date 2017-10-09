@@ -20,7 +20,7 @@ func replaceStringInFile(f os.FileInfo, dir, oldS, newS string) error {
 	return ioutil.WriteFile(filename, []byte(w), f.Mode())
 }
 
-func replace(dir, oldS, newS string, depth int) error {
+func replace(dir, oldS, newS string, extensions []string, depth int) error {
 	if depth == 0 {
 		return nil
 	}
@@ -36,13 +36,21 @@ func replace(dir, oldS, newS string, depth int) error {
 		p := path.Join(dir, name)
 		if f.IsDir() {
 			if name != "vendor" {
-				if err := replace(p, oldS, newS, depth-1); err != nil {
+				if err := replace(p, oldS, newS, extensions, depth-1); err != nil {
 					return err
 				}
 			}
 			//TODO make suffixes optional & extensible
-		} else if strings.HasSuffix(name, ".go") || strings.HasSuffix(name, ".md") {
-			replaceStringInFile(f, dir, oldS, newS)
+		} else {
+			hasExt := false
+			for _, ext := range extensions {
+				if strings.HasSuffix(name, "."+ext) {
+					hasExt = true
+				}
+			}
+			if hasExt {
+				replaceStringInFile(f, dir, oldS, newS)
+			}
 		}
 	}
 	return nil

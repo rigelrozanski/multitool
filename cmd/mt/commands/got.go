@@ -50,6 +50,7 @@ var (
 
 	flagPath   = "work-path"
 	flagDepth  = "depth"
+	flagExt    = "ext"
 	flagLocal  = "local"
 	flagVendor = "vendor"
 )
@@ -61,6 +62,7 @@ func init() {
 
 	fsReplace.StringP(flagPath, "p", ".", "specify the path to act upon")
 	fsReplace.IntP(flagDepth, "d", -1, "specify the recursion depth")
+	fsReplace.StringP(flagExt, "e", "go,md", "filetypes to replace seperated by commas")
 	fsDep.AddFlagSet(fsReplace)
 	fsDep.BoolP(flagLocal, "l", false, "set the import path tot he proper $GOPATH location")
 	fsDep.BoolP(flagVendor, "v", false,
@@ -71,6 +73,7 @@ func init() {
 
 	viper.BindPFlag(flagPath, fsDep.Lookup(flagPath))
 	viper.BindPFlag(flagDepth, fsDep.Lookup(flagDepth))
+	viper.BindPFlag(flagExt, fsDep.Lookup(flagExt))
 	viper.BindPFlag(flagLocal, fsDep.Lookup(flagLocal))
 	viper.BindPFlag(flagVendor, fsDep.Lookup(flagVendor))
 
@@ -95,8 +98,8 @@ func repCmd(cmd *cobra.Command, args []string) error {
 	newS := args[1]
 	dir := viper.GetString(flagPath)
 	depth := viper.GetInt(flagDepth)
-	//panic(fmt.Sprintf("%v,,,,, %v", dir, depth))
-	return replace(dir, oldS, newS, depth)
+	ext := strings.Split(viper.GetString(flagExt), ",")
+	return replace(dir, oldS, newS, ext, depth)
 }
 
 // replace import paths with host, pull, replace back
@@ -120,13 +123,13 @@ func pullCmd(cmd *cobra.Command, args []string) error {
 	}
 	localFullPath := path.Join(GoSrc, localPath)
 
-	err = replace(localFullPath, localPath, remotePath, -1)
+	err = replace(localFullPath, localPath, remotePath, []string{"go"}, -1)
 	if err != nil {
 		return err
 	}
 	addCommit("change to upstream paths")
 	gitPull(remote, branch)
-	return replace(localFullPath, remotePath, localPath, -1)
+	return replace(localFullPath, remotePath, localPath, []string{"go"}, -1)
 }
 
 func branchCmd(cmd *cobra.Command, args []string) error {
@@ -205,13 +208,13 @@ func depCmd(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		if f.Name() != "Godeps" {
-			err := replace(f.Name(), oldS, newS, depth-1)
+			err := replace(f.Name(), oldS, newS, []string{"go"}, depth-1)
 			if err != nil {
 				return err
 			}
 		}
 	}
-	return replace(dir, oldS, newS, 1) // replace in any files in the root
+	return replace(dir, oldS, newS, []string{"go"}, 1) // replace in any files in the root
 }
 
 // checkout a branch across every repository in a directory
