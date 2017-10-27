@@ -13,6 +13,21 @@ which have been set in the yaml  related to tendermint to the lock hash from
 the current lock file... you could also get more specific and do something like
 `multitool lock2yaml github.com/tendermint/go-wire`
 
+### Slack
+
+Often when attempting to copy and paste text from a slack conversation there is 
+excess whitespace and timestamps riddled throughout. This tool will remove the whitespace
+and pesky timestamps automatically within the clipboard. Usage
+
+```
+<copy text to the clipboard from slack>
+mt slck [names]
+<paste text into desired output>
+```
+
+Note that the `[names]` arguments are optional but add extra whitespace between the 
+conversation paragraphs from different participants. The name is the slack handle of
+the participant. 
 
 ### Got
 
