@@ -3,6 +3,7 @@ import:
 - package: github.com/atotto/clipboard
 - package: github.com/mitchellh/go-homedir
 - package: github.com/rigelrozanski/common
+  version: master
 - package: github.com/spf13/cobra
 - package: github.com/spf13/pflag
 - package: github.com/spf13/viper
