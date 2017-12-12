@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/rigelrozanski/common"
@@ -19,17 +20,23 @@ var (
 		Short: "set the pull to origin upstream head",
 		RunE:  setPullCmd,
 	}
-	SetAddCommitPush = &cobra.Command{
+	AddCommitPushCmd = &cobra.Command{
 		Use:   "acp [message]",
 		Short: "add -u, commit -m [message], push origin [cur branch]",
-		RunE:  setAddCommitPush,
+		RunE:  addCommitPushCmd,
+	}
+	DuplicateCmd = &cobra.Command{
+		Use:   "dup",
+		Short: "duplicate the repo to [thisreponame]2, cd there",
+		RunE:  duplicateCmd,
 	}
 )
 
 func init() {
 	GitCmd.AddCommand(
 		SetPullCmd,
-		SetAddCommitPush,
+		AddCommitPushCmd,
+		DuplicateCmd,
 	)
 	RootCmd.AddCommand(GitCmd)
 }
@@ -45,7 +52,7 @@ func setPullCmd(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func setAddCommitPush(cmd *cobra.Command, args []string) error {
+func addCommitPushCmd(cmd *cobra.Command, args []string) error {
 
 	if len(args) < 1 {
 		return fmt.Errorf("Please include a commit message")
@@ -74,6 +81,23 @@ func setAddCommitPush(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	return nil
+}
+
+func duplicateCmd(cmd *cobra.Command, args []string) error {
+	dir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	newDir := dir + "2"
+
+	command2 := fmt.Sprintf("cp -a %v %v", dir, newDir)
+	output2, err := common.Execute(command2)
+	fmt.Printf("%v\n%v\n", command2, output2)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
