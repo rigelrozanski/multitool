@@ -1,5 +1,5 @@
 hash: d9953d60dfda69651c1c050aa0f8369383c882762719b3afaaf4d7ea09e01734
-updated: 2017-12-10T00:00:31.043029315Z
+updated: 2017-12-12T00:41:22.167289455Z
 imports:
 - name: github.com/atotto/clipboard
   version: bb272b845f1112e10117e3e45ce39f690c0001ad
@@ -28,7 +28,7 @@ imports:
 - name: github.com/pelletier/go-toml
   version: 4e9e0ee19b60b13eb79915933f44d8ed5f268bdd
 - name: github.com/rigelrozanski/common
-  version: 75526d9d574cc27d2b540862a65a73ea71fe1aca
+  version: 452c634abeac3d6c5d94bf16b110f1f9cd37ac6e
 - name: github.com/spf13/afero
   version: 8d919cbe7e2627e417f3e45c3c0e489a5b7e2536
   subpackages:
@@ -44,7 +44,7 @@ imports:
 - name: github.com/spf13/viper
   version: 1a0c4a370c3e8286b835467d2dfcdaf636c3538b
 - name: golang.org/x/sys
-  version: b8f5ef32195cae6470b728e8ca677f0dbed1a004
+  version: 53aa286056ef226755cd898109dbcdaba8ac0b81
   subpackages:
   - unix
 - name: golang.org/x/text
