@@ -27,8 +27,13 @@ var (
 	}
 	DuplicateCmd = &cobra.Command{
 		Use:   "dup",
-		Short: "duplicate the repo to [thisreponame]2, cd there",
+		Short: "duplicate the repo to [thisreponame]2",
 		RunE:  duplicateCmd,
+	}
+	RmDuplicateCmd = &cobra.Command{
+		Use:   "rmdup",
+		Short: "remove the duplicate the repo [thisreponame]2",
+		RunE:  rmDuplicateCmd,
 	}
 )
 
@@ -37,6 +42,7 @@ func init() {
 		SetPullCmd,
 		AddCommitPushCmd,
 		DuplicateCmd,
+		RmDuplicateCmd,
 	)
 	RootCmd.AddCommand(GitCmd)
 }
@@ -91,9 +97,26 @@ func duplicateCmd(cmd *cobra.Command, args []string) error {
 	}
 	newDir := dir + "2"
 
-	command2 := fmt.Sprintf("cp -a %v %v", dir, newDir)
-	output2, err := common.Execute(command2)
-	fmt.Printf("%v\n%v\n", command2, output2)
+	command := fmt.Sprintf("cp -a %v %v", dir, newDir)
+	output, err := common.Execute(command)
+	fmt.Printf("%v\n%v\n", command, output)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func rmDuplicateCmd(cmd *cobra.Command, args []string) error {
+	dir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	rmDir := dir + "2"
+
+	command := fmt.Sprintf("rm -r %v", rmDir)
+	output, err := common.Execute(command)
+	fmt.Printf("%v\n%v\n", command, output)
 	if err != nil {
 		return err
 	}
