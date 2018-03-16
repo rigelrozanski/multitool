@@ -11,18 +11,14 @@ import (
 
 // Lock2yamlCmd represents the lock2yaml command
 var (
-	GitCmd = &cobra.Command{
-		Use:   "git",
-		Short: "git tricks",
-	}
 	SetPullCmd = &cobra.Command{
-		Use:   "setpull",
-		Short: "set the pull to origin upstream head",
+		Use:   "set-pull",
+		Short: "GIT: set the pull to origin upstream head",
 		RunE:  setPullCmd,
 	}
 	AddCommitPushCmd = &cobra.Command{
 		Use:   "acp [message]",
-		Short: "add -u, commit -m [message], push origin [cur branch]",
+		Short: "GIT: add -u, commit -m [message], push origin [cur branch]",
 		RunE:  addCommitPushCmd,
 	}
 	DuplicateCmd = &cobra.Command{
@@ -38,13 +34,12 @@ var (
 )
 
 func init() {
-	GitCmd.AddCommand(
+	RootCmd.AddCommand(
 		SetPullCmd,
 		AddCommitPushCmd,
 		DuplicateCmd,
 		RmDuplicateCmd,
 	)
-	RootCmd.AddCommand(GitCmd)
 }
 
 func setPullCmd(cmd *cobra.Command, args []string) error {
