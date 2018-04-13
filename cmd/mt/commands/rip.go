@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/rigelrozanski/common"
 	wb "github.com/rigelrozanski/wb/lib"
@@ -21,8 +22,14 @@ func init() {
 func ripCmd(cmd *cobra.Command, args []string) {
 	urls := wb.GetWB("rip")
 	for _, url := range urls {
+
+		flags := ""
+		if strings.Contains(url, "bandcamp") {
+			flags += "-b "
+		}
+
 		fmt.Printf("rippin' %v\n", url)
-		out, err := common.Execute(fmt.Sprintf("soundscrape -b %v", url))
+		out, err := common.Execute(fmt.Sprintf("soundscrape %v%v", flags, url))
 		fmt.Printf("result/err: %v/%v\n", out, err)
 	}
 }
