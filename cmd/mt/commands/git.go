@@ -27,7 +27,7 @@ var (
 		RunE:  duplicateCmd,
 	}
 	RmDuplicateCmd = &cobra.Command{
-		Use:   "rmdup",
+		Use:   "rm-dup",
 		Short: "remove the duplicate the repo [thisreponame]2",
 		RunE:  rmDuplicateCmd,
 	}
