@@ -40,7 +40,7 @@ func createTestCmd(cmd *cobra.Command, args []string) error {
 	dir := filepath.Dir(sourceFile)
 	testFile := path.Join(dir, name)
 
-	testFnStr := fmt.Sprintf("Func Test%v(t *testing.T) { \n\n } \n", fnName)
+	testFnStr := fmt.Sprintf("\nfunc Test%v(t *testing.T) { \n\n}", fnName)
 
 	var lines []string
 	if common.FileExists(testFile) {
@@ -57,7 +57,7 @@ func createTestCmd(cmd *cobra.Command, args []string) error {
 		}
 		lines = []string{
 			sourceLines[0], //package
-			`import "testing"`,
+			"\nimport \"testing\"",
 			testFnStr,
 		}
 	}
