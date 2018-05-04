@@ -62,5 +62,6 @@ func createTestCmd(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	fmt.Println(testFile)
 	return common.WriteLines(lines, testFile)
 }
