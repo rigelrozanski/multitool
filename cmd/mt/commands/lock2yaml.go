@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -16,6 +15,7 @@ var (
 	Lock2YamlCmd = &cobra.Command{
 		Use:   "lock2yaml [import-root]",
 		Short: "Set the glide yaml version to the hash from the lock file",
+		Args:  cobra.ExactArgs(1),
 		RunE:  lock2YamlCmd,
 	}
 
@@ -31,10 +31,6 @@ func init() {
 }
 
 func lock2YamlCmd(cmd *cobra.Command, args []string) error {
-	if len(args) < 1 {
-		return errors.New("Please specify the import root")
-	}
-
 	//get files
 	yaml, err := common.ReadLines("glide.yaml")
 	if err != nil {

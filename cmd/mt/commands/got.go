@@ -25,11 +25,13 @@ var (
 	RepCmd = &cobra.Command{
 		Use:   "rep [oldStr] [newStr]",
 		Short: "String replace on all files in the directory tree",
+		Args:  cobra.ExactArgs(2),
 		RunE:  repCmd,
 	}
 	PullCmd = &cobra.Command{
 		Use:   "pull [oldStr] [newStr]",
 		Short: "Swap paths, pull changes, swap back",
+		Args:  cobra.ExactArgs(2),
 		RunE:  pullCmd,
 	}
 	BranchCmd = &cobra.Command{
@@ -91,9 +93,6 @@ func init() {
 
 // replace a line of text in every file with another
 func repCmd(cmd *cobra.Command, args []string) error {
-	if len(args) < 2 {
-		return fmt.Errorf("command needs 2 args")
-	}
 	oldS := args[0]
 	newS := args[1]
 	dir := viper.GetString(flagPath)
@@ -104,9 +103,6 @@ func repCmd(cmd *cobra.Command, args []string) error {
 
 // replace import paths with host, pull, replace back
 func pullCmd(cmd *cobra.Command, args []string) error {
-	if len(args) < 2 {
-		return fmt.Errorf("command needs 2 args")
-	}
 	remote := args[0]
 	branch := args[1]
 	remotePath, err := resolveRemoteRepo(remote)

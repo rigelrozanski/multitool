@@ -19,6 +19,7 @@ var (
 	AddCommitPushCmd = &cobra.Command{
 		Use:   "acp [message]",
 		Short: "GIT: add -u, commit -m [message], push origin [cur branch]",
+		Args:  cobra.ExactArgs(1),
 		RunE:  addCommitPushCmd,
 	}
 	DuplicateCmd = &cobra.Command{
@@ -54,10 +55,6 @@ func setPullCmd(cmd *cobra.Command, args []string) error {
 }
 
 func addCommitPushCmd(cmd *cobra.Command, args []string) error {
-
-	if len(args) < 1 {
-		return fmt.Errorf("Please include a commit message")
-	}
 
 	//combine args into one commit message
 	message := strings.Join(args[:], " ")

@@ -15,7 +15,7 @@ func init() {
 
 // Lock2yamlCmd represents the lock2yaml command
 var SlackCmd = &cobra.Command{
-	Use:   "slack [names]",
+	Use:   "slack [names...]",
 	Short: "From/to clipboard - slack text, delete extra lines and timestamps",
 	RunE: func(cmd *cobra.Command, args []string) error {
 

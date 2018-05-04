@@ -20,6 +20,7 @@ var (
 	MirrorCmd = &cobra.Command{
 		Use:   "mirror [prefix] [suffix]",
 		Short: "mirror files with a number in them",
+		Args:  cobra.ExactArgs(2),
 		RunE:  mirrorCmd,
 	}
 )
@@ -30,10 +31,6 @@ func init() {
 }
 
 func mirrorCmd(cmd *cobra.Command, args []string) error {
-
-	if len(args) != 2 {
-		return fmt.Errorf("must include prefix and suffix of file")
-	}
 
 	prefix, suffix := args[0], args[1]
 
