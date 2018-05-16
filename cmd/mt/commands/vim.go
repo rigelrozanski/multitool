@@ -121,7 +121,7 @@ func insertPrints(lines []string, startLineNo int) []string {
 
 		if strings.Contains(line, "}") || strings.Contains(line, "{") { // reached the end of the function
 
-			outputStr := fmt.Sprintf("fmt.Println(\"wackydebugouput %v\")", debugNo)
+			outputStr := fmt.Sprintf("fmt.Println(\"wackydebugoutput %v\")", debugNo)
 			debugNo++
 
 			// insert the line
@@ -167,7 +167,7 @@ func removePrints(lines []string, startLineNo int) []string {
 		}
 
 		// remove the line
-		if strings.Contains(line, "wackydebugouput") {
+		if strings.Contains(line, "wackydebugoutput") {
 			lines = append(lines[:i], lines[i+1:]...)
 		}
 	}
