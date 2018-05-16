@@ -77,7 +77,7 @@ func getLockHash(lock []string, importName string) (string, error) {
 func getPostColon(line string) (string, error) {
 	s := strings.Split(line, ": ")
 	if len(s) < 2 {
-		return "", fmt.Errorf("Problem retrieving value for line: \n\v", line)
+		return "", fmt.Errorf("Problem retrieving value for line: \n%v", line)
 	}
 	return s[1], nil
 }
