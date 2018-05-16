@@ -7,7 +7,7 @@ import (
 	"github.com/magiconair/properties/assert"
 )
 
-func TestInsertPrints(t *testing.T) {
+func TestInsertRemovePrints(t *testing.T) {
 	testLines := `
 func debugPrintsCmd(cmd *cobra.Command, args []string) error {
 	if !common.FileExists(testFile) {
@@ -74,4 +74,8 @@ func debugPrintsCmd(cmd *cobra.Command, args []string) error {
 	outlinesSplit := insertPrints(testLinesSplit, 7)
 	outlines := strings.Join(outlinesSplit, "\n")
 	assert.Equal(t, expOutlines, outlines, "\n\n\ngot:\n"+outlines+"\nexp:\n"+expOutlines+"\n")
+
+	outlinesSplit = removePrints(outlinesSplit, 7)
+	outlines = strings.Join(outlinesSplit, "\n")
+	assert.Equal(t, testLines, outlines, "\n\n\ngot:\n"+outlines+"\nexp:\n"+testLines+"\n")
 }

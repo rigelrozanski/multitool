@@ -30,11 +30,18 @@ var (
 		Args:  cobra.ExactArgs(2),
 		RunE:  debugPrintsCmd,
 	}
+	RemoveDebugPrintsCmd = &cobra.Command{
+		Use:   "remove-debug-prints [source-file] [lineno]",
+		Short: "remove debug prints",
+		Args:  cobra.ExactArgs(2),
+		RunE:  removeDebugPrintsCmd,
+	}
 )
 
 func init() {
 	VIMCmd.AddCommand(CreateTestCmd)
 	VIMCmd.AddCommand(DebugPrintsCmd)
+	VIMCmd.AddCommand(RemoveDebugPrintsCmd)
 	RootCmd.AddCommand(VIMCmd)
 }
 
@@ -121,6 +128,47 @@ func insertPrints(lines []string, startLineNo int) []string {
 			lines = append(lines[:i+1], append([]string{outputStr}, lines[i+1:]...)...)
 			i++ // skip a line
 			continue
+		}
+	}
+
+	return lines
+}
+
+func removeDebugPrintsCmd(cmd *cobra.Command, args []string) error {
+
+	sourceFile := args[0]
+	startLineNo, err := strconv.Atoi(args[1])
+	if err != nil {
+		return err
+	}
+
+	if !common.FileExists(sourceFile) {
+		return errors.New("file don't exist")
+	}
+
+	lines, err := common.ReadLines(sourceFile)
+	if err != nil {
+		return err
+	}
+	lines = removePrints(lines, startLineNo)
+
+	err = common.WriteLines(lines, sourceFile)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func removePrints(lines []string, startLineNo int) []string {
+	for i := startLineNo; i < len(lines); i++ {
+		line := lines[i]
+		if strings.HasPrefix(line, "}") { // reached the end of the function
+			break
+		}
+
+		// remove the line
+		if strings.Contains(line, "wackydebugouput") {
+			lines = append(lines[:i], lines[i+1:]...)
 		}
 	}
 
