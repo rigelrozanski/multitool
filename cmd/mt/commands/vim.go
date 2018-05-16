@@ -25,9 +25,9 @@ var (
 		RunE:  createTestCmd,
 	}
 	DebugPrintsCmd = &cobra.Command{
-		Use:   "debug-prints [source-file] [lineno]",
+		Use:   "debug-prints [name] [source-file] [lineno]",
 		Short: "add prints to all the possible end points within a function",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.ExactArgs(3),
 		RunE:  debugPrintsCmd,
 	}
 	RemoveDebugPrintsCmd = &cobra.Command{
@@ -84,8 +84,9 @@ func createTestCmd(cmd *cobra.Command, args []string) error {
 
 func debugPrintsCmd(cmd *cobra.Command, args []string) error {
 
-	sourceFile := args[0]
-	startLineNo, err := strconv.Atoi(args[1])
+	name := args[0]
+	sourceFile := args[1]
+	startLineNo, err := strconv.Atoi(args[2])
 	if err != nil {
 		return err
 	}
@@ -98,7 +99,7 @@ func debugPrintsCmd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	lines = insertPrints(lines, startLineNo)
+	lines = insertPrints(lines, startLineNo, name)
 
 	err = common.WriteLines(lines, sourceFile)
 	if err != nil {
@@ -107,7 +108,7 @@ func debugPrintsCmd(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func insertPrints(lines []string, startLineNo int) []string {
+func insertPrints(lines []string, startLineNo int, name string) []string {
 
 	debugNo := 0
 	for i := startLineNo; i < len(lines); i++ {
@@ -121,7 +122,7 @@ func insertPrints(lines []string, startLineNo int) []string {
 
 		if strings.Contains(line, "}") || strings.Contains(line, "{") { // reached the end of the function
 
-			outputStr := fmt.Sprintf("fmt.Println(\"wackydebugoutput %v\")", debugNo)
+			outputStr := fmt.Sprintf("fmt.Println(\"wackydebugoutput %v %v\")", name, debugNo)
 			debugNo++
 
 			// insert the line

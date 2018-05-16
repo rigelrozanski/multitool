@@ -44,23 +44,23 @@ func debugPrintsCmd(cmd *cobra.Command, args []string) error {
 }
 
 func insertPrints(lines []string, startLineNo int) []string {
-fmt.Println("wackydebugouput 0")
+fmt.Println("wackydebugoutput hoot 0")
 	debugNo := 0
 	for i := startLineNo; i < len(lines); i++ {
-fmt.Println("wackydebugouput 1")
+fmt.Println("wackydebugoutput hoot 1")
 		line := lines[i]
 		if len(line) == 0 { // skip blank lines
-fmt.Println("wackydebugouput 2")
+fmt.Println("wackydebugoutput hoot 2")
 			continue
 		}
-fmt.Println("wackydebugouput 3")
+fmt.Println("wackydebugoutput hoot 3")
 		if line[0] == "}" { // reached the end of the function
-fmt.Println("wackydebugouput 4")
+fmt.Println("wackydebugoutput hoot 4")
 			break
 		}
-fmt.Println("wackydebugouput 5")
+fmt.Println("wackydebugoutput hoot 5")
 	}
-fmt.Println("wackydebugouput 6")
+fmt.Println("wackydebugoutput hoot 6")
 	return lines
 }
 
@@ -71,7 +71,7 @@ func debugPrintsCmd(cmd *cobra.Command, args []string) error {
 }
 `
 	testLinesSplit := strings.Split(testLines, "\n")
-	outlinesSplit := insertPrints(testLinesSplit, 7)
+	outlinesSplit := insertPrints(testLinesSplit, 7, "hoot")
 	outlines := strings.Join(outlinesSplit, "\n")
 	assert.Equal(t, expOutlines, outlines, "\n\n\ngot:\n"+outlines+"\nexp:\n"+expOutlines+"\n")
 

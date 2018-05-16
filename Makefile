@@ -5,4 +5,7 @@ build:
 install:
 	go install ./cmd/...
 
-.PHONY: build install
+test:
+	go test ./cmd/...
+
+.PHONY: build install test
