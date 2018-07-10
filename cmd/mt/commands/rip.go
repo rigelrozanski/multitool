@@ -20,7 +20,11 @@ func init() {
 }
 
 func ripCmd(cmd *cobra.Command, args []string) {
-	urls := wb.GetWB("rip")
+	urls, found := wb.GetWB("rip")
+	if !found {
+		fmt.Println("can't find wb rip")
+		return
+	}
 	for _, url := range urls {
 
 		flags := ""
