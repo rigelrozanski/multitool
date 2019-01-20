@@ -218,6 +218,8 @@ func columnSpacesCmd(cmd *cobra.Command, args []string) error {
 		}
 		lines[i] = line
 	}
+	//debugPrint := fmt.Sprintf("startLineNo: %v endLineNo: %v", startLineNo, endLineNo)
+	//lines[startLineNo] += debugPrint
 
 	err = common.WriteLines(lines, sourceFile)
 	if err != nil {
