@@ -36,12 +36,19 @@ var (
 		Args:  cobra.ExactArgs(2),
 		RunE:  removeDebugPrintsCmd,
 	}
+	ColumnSpacesCmd = &cobra.Command{
+		Use:   "column-width [source-file] [lineno-start] [lineno-end] [column-characters]",
+		Short: "add spaces up to the column specified",
+		Args:  cobra.ExactArgs(4),
+		RunE:  columnSpacesCmd,
+	}
 )
 
 func init() {
 	VIMCmd.AddCommand(CreateTestCmd)
 	VIMCmd.AddCommand(DebugPrintsCmd)
 	VIMCmd.AddCommand(RemoveDebugPrintsCmd)
+	VIMCmd.AddCommand(ColumnSpacesCmd)
 	RootCmd.AddCommand(VIMCmd)
 }
 
@@ -174,4 +181,47 @@ func removePrints(lines []string, startLineNo int) []string {
 	}
 
 	return lines
+}
+
+func columnSpacesCmd(cmd *cobra.Command, args []string) error {
+
+	sourceFile := args[0]
+	startLineNo, err := strconv.Atoi(args[1])
+	if err != nil {
+		return err
+	}
+	endLineNo, err := strconv.Atoi(args[2])
+	if err != nil {
+		return err
+	}
+	columnChars, err := strconv.Atoi(args[3])
+	if err != nil {
+		return err
+	}
+
+	if !common.FileExists(sourceFile) {
+		return errors.New("file don't exist")
+	}
+
+	lines, err := common.ReadLines(sourceFile)
+	if err != nil {
+		return err
+	}
+	for i := startLineNo; i <= endLineNo; i++ {
+		line := lines[i]
+		len := len(line)
+		if len >= columnChars {
+			continue
+		}
+		for j := len; j <= columnChars; j++ {
+			line += " "
+		}
+		lines[i] = line
+	}
+
+	err = common.WriteLines(lines, sourceFile)
+	if err != nil {
+		return err
+	}
+	return nil
 }
