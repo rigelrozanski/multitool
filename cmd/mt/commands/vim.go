@@ -42,6 +42,12 @@ var (
 		Args:  cobra.ExactArgs(4),
 		RunE:  columnSpacesCmd,
 	}
+	RemoveEveryOtherCmd = &cobra.Command{
+		Use:   "remove-every-other [source-file] [lineno-start] [lineno-end]",
+		Short: "remove every other line (starting with the first line",
+		Args:  cobra.ExactArgs(3),
+		RunE:  removeEveryOtherCmd,
+	}
 )
 
 func init() {
@@ -49,6 +55,7 @@ func init() {
 	VIMCmd.AddCommand(DebugPrintsCmd)
 	VIMCmd.AddCommand(RemoveDebugPrintsCmd)
 	VIMCmd.AddCommand(ColumnSpacesCmd)
+	VIMCmd.AddCommand(RemoveEveryOtherCmd)
 	RootCmd.AddCommand(VIMCmd)
 }
 
@@ -183,30 +190,42 @@ func removePrints(lines []string, startLineNo int) []string {
 	return lines
 }
 
+// helper function for visual mode vim commands
+func loadFileVisualMode(args []string) (srcFile string, startLineNo, endLineNo int, lines []string, err error) {
+
+	srcFile = args[0]
+	startLineNo, err = strconv.Atoi(args[1])
+	if err != nil {
+		return
+	}
+	endLineNo, err = strconv.Atoi(args[2])
+	if err != nil {
+		return
+	}
+	if !common.FileExists(srcFile) {
+		err = errors.New("file don't exist")
+		return
+	}
+	lines, err = common.ReadLines(srcFile)
+	if err != nil {
+		return
+	}
+
+	return srcFile, startLineNo, endLineNo, lines, nil
+}
+
 func columnSpacesCmd(cmd *cobra.Command, args []string) error {
 
-	sourceFile := args[0]
-	startLineNo, err := strconv.Atoi(args[1])
+	srcFile, startLineNo, endLineNo, lines, err := loadFileVisualMode(args)
 	if err != nil {
 		return err
 	}
-	endLineNo, err := strconv.Atoi(args[2])
-	if err != nil {
-		return err
-	}
+
 	columnChars, err := strconv.Atoi(args[3])
 	if err != nil {
 		return err
 	}
 
-	if !common.FileExists(sourceFile) {
-		return errors.New("file don't exist")
-	}
-
-	lines, err := common.ReadLines(sourceFile)
-	if err != nil {
-		return err
-	}
 	for i := startLineNo; i <= endLineNo; i++ {
 		line := lines[i]
 		len := len(line)
@@ -221,7 +240,44 @@ func columnSpacesCmd(cmd *cobra.Command, args []string) error {
 	//debugPrint := fmt.Sprintf("startLineNo: %v endLineNo: %v", startLineNo, endLineNo)
 	//lines[startLineNo] += debugPrint
 
-	err = common.WriteLines(lines, sourceFile)
+	err = common.WriteLines(lines, srcFile)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// remove the first line
+func removeEveryOtherCmd(cmd *cobra.Command, args []string) error {
+
+	srcFile, startLineNo, endLineNo, lines, err := loadFileVisualMode(args)
+	if err != nil {
+		return err
+	}
+
+	var outLines []string
+	if startLineNo > 0 {
+		outLines = lines[:startLineNo]
+	}
+
+	makeEven := 0
+	if startLineNo%2 == 0 {
+		makeEven = 1
+	}
+	for i := startLineNo; i <= endLineNo; i++ {
+		if (i+makeEven)%2 == 0 {
+			outLines = append(outLines[:], lines[i])
+		}
+	}
+
+	if endLineNo+1 < len(lines) {
+		outLines = append(outLines[:], lines[endLineNo:]...)
+	}
+
+	//debugPrint := fmt.Sprintf(" hits: %v", out)
+	//lines[startLineNo] += debugPrint
+
+	err = common.WriteLines(outLines, srcFile)
 	if err != nil {
 		return err
 	}
