@@ -48,6 +48,12 @@ var (
 		Args:  cobra.ExactArgs(3),
 		RunE:  removeEveryOtherCmd,
 	}
+	CreateNewXxx = &cobra.Command{
+		Use:   "create-new-xxx [source-file] [lineno-start] [lineno-end]",
+		Short: "create a NewXxx function for the highlighted struct",
+		Args:  cobra.ExactArgs(3),
+		RunE:  createNewXxx,
+	}
 )
 
 func init() {
@@ -277,6 +283,70 @@ func removeEveryOtherCmd(cmd *cobra.Command, args []string) error {
 	//debugPrint := fmt.Sprintf(" hits: %v", out)
 	//lines[startLineNo] += debugPrint
 
+	err = common.WriteLines(outLines, srcFile)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func createNewXxx(cmd *cobra.Command, args []string) error {
+
+	srcFile, startLineNo, endLineNo, lines, err := loadFileVisualMode(args)
+	if err != nil {
+		return err
+	}
+
+	// get the function name
+	split0 := strings.Split(lines[startLineNo], " ")
+	var name string
+	for i := 0; i < len(split0); i-- {
+		if split0[i] == "type" && split0[i+2] == "struct" {
+			name := split0[i+1]
+			break
+		}
+	}
+
+	// get the field names and types
+	var fieldNames, fieldTypes []string
+	for i := startLineNo + 1; i <= endLineNo; i++ {
+		spliti := strings.Split(lines[i], " ")
+		var fieldName, fieldType []string
+		success := false
+		for j := 0; j < len(spliti); j++ {
+			word := spliti[j]
+			if len(word) > 0 {
+				if fieldName == "" {
+					fieldName = word
+					continue
+				}
+				if fieldType == "" {
+					fieldType = word
+					success = true
+					break
+				}
+			}
+		}
+		if success {
+			fieldNames = append(fieldNames[:], fieldName)
+			fieldTypes = append(fieldTypes[:], fieldType)
+		}
+	}
+
+	// create the newXxx struct
+	var newXxx []string
+	newXxx = append(newXxx[:], "\n")
+	newXxx = append(newXxx[:], name)
+	for i := 0; i < len(fieldNames); i++ {
+		newXxx = append(newXxx[:], fieldNames[i]+" "+fieldTypes[i])
+	}
+	newXxx = append(newXxx[:], "\n")
+
+	// compile and save the final file
+	var outLines []string
+	outLines = append(outLines[:], lines[:endLineNo]...)
+	outLines = append(outLines[:], newXxx...)
+	outLines = append(outLines[:], lines[endLineNo:]...)
 	err = common.WriteLines(outLines, srcFile)
 	if err != nil {
 		return err
