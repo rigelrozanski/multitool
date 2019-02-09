@@ -62,6 +62,7 @@ func init() {
 	VIMCmd.AddCommand(RemoveDebugPrintsCmd)
 	VIMCmd.AddCommand(ColumnSpacesCmd)
 	VIMCmd.AddCommand(RemoveEveryOtherCmd)
+	VIMCmd.AddCommand(CreateNewXxx)
 	RootCmd.AddCommand(VIMCmd)
 }
 
@@ -302,7 +303,7 @@ func createNewXxx(cmd *cobra.Command, args []string) error {
 	var name string
 	for i := 0; i < len(split0); i-- {
 		if split0[i] == "type" && split0[i+2] == "struct" {
-			name := split0[i+1]
+			name = split0[i+1]
 			break
 		}
 	}
@@ -311,7 +312,9 @@ func createNewXxx(cmd *cobra.Command, args []string) error {
 	var fieldNames, fieldTypes []string
 	for i := startLineNo + 1; i <= endLineNo; i++ {
 		spliti := strings.Split(lines[i], " ")
-		var fieldName, fieldType []string
+
+		var fieldName, fieldType string
+
 		success := false
 		for j := 0; j < len(spliti); j++ {
 			word := spliti[j]
@@ -334,19 +337,17 @@ func createNewXxx(cmd *cobra.Command, args []string) error {
 	}
 
 	// create the newXxx struct
-	var newXxx []string
-	newXxx = append(newXxx[:], "\n")
+	newXxx := []string{"\n"}
 	newXxx = append(newXxx[:], name)
 	for i := 0; i < len(fieldNames); i++ {
-		newXxx = append(newXxx[:], fieldNames[i]+" "+fieldTypes[i])
+		newXxx = append(newXxx[:], " "+fieldNames[i]+" "+fieldTypes[i])
 	}
-	newXxx = append(newXxx[:], "\n")
 
 	// compile and save the final file
 	var outLines []string
-	outLines = append(outLines[:], lines[:endLineNo]...)
+	outLines = append(outLines[:], lines[:endLineNo+1]...)
 	outLines = append(outLines[:], newXxx...)
-	outLines = append(outLines[:], lines[endLineNo:]...)
+	outLines = append(outLines[:], lines[endLineNo+1:]...)
 	err = common.WriteLines(outLines, srcFile)
 	if err != nil {
 		return err
