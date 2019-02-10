@@ -309,18 +309,19 @@ func createNewXxx(cmd *cobra.Command, args []string) error {
 	}
 
 	// get the field names and types
-	var fieldNames, fieldTypes []string
+	var fieldNames, fieldNamesLC, fieldTypes []string
+
 	for i := startLineNo + 1; i <= endLineNo; i++ {
-		spliti := strings.Split(lines[i], " ")
+		spliti := strings.Fields(lines[i])
 
-		var fieldName, fieldType string
-
+		var fieldName, fieldNameLC, fieldType string
 		success := false
 		for j := 0; j < len(spliti); j++ {
 			word := spliti[j]
 			if len(word) > 0 {
 				if fieldName == "" {
 					fieldName = word
+					fieldNameLC = strings.ToLower(string(word[0])) + string(word[1:])
 					continue
 				}
 				if fieldType == "" {
@@ -331,17 +332,37 @@ func createNewXxx(cmd *cobra.Command, args []string) error {
 			}
 		}
 		if success {
+			fieldNamesLC = append(fieldNamesLC[:], fieldNameLC)
 			fieldNames = append(fieldNames[:], fieldName)
 			fieldTypes = append(fieldTypes[:], fieldType)
 		}
 	}
 
 	// create the newXxx struct
-	newXxx := []string{"\n"}
-	newXxx = append(newXxx[:], name)
-	for i := 0; i < len(fieldNames); i++ {
-		newXxx = append(newXxx[:], " "+fieldNames[i]+" "+fieldTypes[i])
+	newXxx := []string{""}
+
+	// comment above function
+	newXxx = append(newXxx[:], fmt.Sprintf("// %v - TODO", name))
+
+	// function header
+	fnHead := fmt.Sprintf("func New%v(", name)
+	for i := 0; i < len(fieldNamesLC); i++ {
+		fnHead += fmt.Sprintf("%s %s, ", fieldNamesLC[i], fieldTypes[i])
 	}
+	fnHead = fmt.Sprintf("%v) %v {", fnHead[:len(fnHead)-2], name) // remove last comma, return arg
+
+	newXxx = append(newXxx[:],
+		fnHead,
+		fmt.Sprintf("    return %v {", name)) // first line in function
+
+	// type definition lines
+	for i := 0; i < len(fieldNames); i++ {
+		newline := fmt.Sprintf("        %s: %s, ", fieldNames[i], fieldNamesLC[i])
+		newXxx = append(newXxx[:], newline)
+	}
+
+	// closing lines
+	newXxx = append(newXxx[:], "    }", "}")
 
 	// compile and save the final file
 	var outLines []string
