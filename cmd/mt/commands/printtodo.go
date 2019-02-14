@@ -25,14 +25,14 @@ var PrintTodoCmd = &cobra.Command{
 		}
 		pdf := gofpdf.New("P", "mm", "Letter", "")
 		pdf.AddPage()
-		pdf.SetFont("courier", "", 14)
+		pdf.SetFont("courier", "", 12)
 
 		for i, item := range items {
 			bullet := " - " + item
-			pdf.Text(5, float64(10+5*i), bullet)
-			pdf.Text(110, float64(10+5*i), bullet)
-			pdf.Text(5, float64(155+5*i), bullet)
-			pdf.Text(110, float64(155+5*i), bullet)
+			pdf.Text(3, float64(20+5*i), bullet)
+			pdf.Text(105, float64(20+5*i), bullet)
+			pdf.Text(3, float64(155+5*i), bullet)
+			pdf.Text(105, float64(155+5*i), bullet)
 		}
 
 		err := pdf.OutputFileAndClose("temp.pdf")

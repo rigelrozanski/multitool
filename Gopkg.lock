@@ -45,6 +45,14 @@
   version = "v1.0"
 
 [[projects]]
+  digest = "1:db23aee6f0ff15fbcd0559d660f91d6b738baeeca46d953396b2fdcec93e1260"
+  name = "github.com/jung-kurt/gofpdf"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "14c1db30737a138f8d9797cffea58783892b2fae"
+  version = "v1.0.0"
+
+[[projects]]
   digest = "1:53e8c5c79716437e601696140e8b1801aae4204f4ec54a504333702a49572c4f"
   name = "github.com/magiconair/properties"
   packages = [
@@ -182,6 +190,7 @@
   analyzer-version = 1
   input-imports = [
     "github.com/atotto/clipboard",
+    "github.com/jung-kurt/gofpdf",
     "github.com/magiconair/properties/assert",
     "github.com/mitchellh/go-homedir",
     "github.com/rigelrozanski/common",
