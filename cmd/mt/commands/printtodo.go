@@ -2,8 +2,11 @@ package commands
 
 import (
 	"errors"
+	"fmt"
+	"os"
 
 	"github.com/jung-kurt/gofpdf"
+	"github.com/rigelrozanski/common"
 	wb "github.com/rigelrozanski/wb/lib"
 	"github.com/spf13/cobra"
 )
@@ -22,18 +25,30 @@ var PrintTodoCmd = &cobra.Command{
 		}
 		pdf := gofpdf.New("P", "mm", "Letter", "")
 		pdf.AddPage()
-		pdf.SetFont("Arial", "", 14)
+		pdf.SetFont("courier", "", 14)
 
 		for i, item := range items {
 			bullet := " - " + item
-			pdf.Cell(3, float64(3+12*i), bullet)
-			pdf.Cell(110, float64(3+12*i), bullet)
+			pdf.Text(5, float64(10+5*i), bullet)
+			pdf.Text(110, float64(10+5*i), bullet)
+			pdf.Text(5, float64(155+5*i), bullet)
+			pdf.Text(110, float64(155+5*i), bullet)
 		}
 
-		err := pdf.OutputFileAndClose("hello2.pdf")
+		err := pdf.OutputFileAndClose("temp.pdf")
 		if err != nil {
 			return err
 		}
-		return nil
+
+		// print the file
+		command1 := fmt.Sprintf("lp temp.pdf")
+		output1, err := common.Execute(command1)
+		fmt.Printf("%v\n%v\n", command1, output1)
+		if err != nil {
+			return err
+		}
+
+		// remove the temp file
+		return os.Remove("temp.pdf")
 	},
 }
