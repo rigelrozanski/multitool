@@ -25,7 +25,8 @@ var (
 			if err != nil {
 				return err
 			}
-			for i, f := range files {
+			tocNumber := 1
+			for _, f := range files {
 				if f.IsDir() {
 					continue
 				}
@@ -53,13 +54,12 @@ var (
 				if len(parsed[1]) == 1 {
 					fileTitle = parsed[1][0]
 				}
-				fmt.Printf("%v. **[%v](%v)**\n", i, fileTitle, p)
+				fmt.Printf("%v. **[%v](%v)**\n", tocNumber, fileTitle, p)
+				tocNumber++
 
 				for _, subTitle := range parsed[2] {
 					fmt.Printf("    - [%v](%v#%v)\n", subTitle, p, subTitle)
 				}
-
-				//fmt.Println(parsed)
 			}
 			return nil
 		},
@@ -70,6 +70,8 @@ func init() {
 	RootCmd.AddCommand(TocCmd)
 }
 
+// TODO move to rigelrozanski/common
+// TODO make suborders
 func parseHeaders(markdown []string) map[int][]string {
 	headers := make(map[int][]string)
 	for _, line := range markdown {
