@@ -58,7 +58,9 @@ var (
 				tocNumber++
 
 				for _, subTitle := range parsed[2] {
-					fmt.Printf("    - [%v](%v#%v)\n", subTitle, p, subTitle)
+					linking := strings.ToLower(subTitle)
+					linking = strings.Replace(linking, " ", "-", -1)
+					fmt.Printf("    - [%v](%v#%v)\n", subTitle, p, linking)
 				}
 			}
 			return nil
