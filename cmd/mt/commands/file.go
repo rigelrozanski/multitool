@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Lock2yamlCmd represents the lock2yaml command
+// file commands
 var (
 	FileCmd = &cobra.Command{
 		Use:   "file",
