@@ -10,7 +10,6 @@ import (
 	"os"
 	"path"
 	"runtime"
-	"time"
 
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
@@ -33,33 +32,11 @@ func init() {
 }
 
 // add an entry to the calendar
-var RemoveCalEntryCmd = &cobra.Command{
-	Use: "remove [month] [day] [name]",
-	Run: func(cmd *cobra.Command, args []string) {
-
-	},
-}
-
-// GetFileInThisPath - get a file in the path of THIS golang file
-func GetFileInThisPath(filename string) (string, error) {
-	// get the config file
-	_, thisfilename, _, ok := runtime.Caller(0)
-	if !ok {
-		return "", errors.New("No caller information")
-	}
-	filepath := path.Join(path.Dir(thisfilename), filename)
-	if _, err := os.Stat(filepath); os.IsNotExist(err) {
-		return filepath, fmt.Errorf("expected file at:\n\t%v", filepath)
-	}
-	return filepath, nil
-}
-
-// add an entry to the calendar
 var AddCalEntryCmd = &cobra.Command{
 	Use: "add [month] [day] [name]",
 	RunE: func(cmd *cobra.Command, args []string) error {
 
-		credentialsFile, err := GetFileInThisPath("calendar_credentials.json")
+		credentialsFile, err := getFileInThisPath("calendar_credentials.json")
 		if err != nil {
 			return err
 		}
@@ -81,37 +58,60 @@ var AddCalEntryCmd = &cobra.Command{
 			log.Fatalf("Unable to retrieve Calendar client: %v", err)
 		}
 
-		t := time.Now().Format(time.RFC3339)
-		events, err := srv.Events.List("primary").ShowDeleted(false).
-			SingleEvents(true).TimeMin(t).MaxResults(10).OrderBy("startTime").Do()
+		event := &calendar.Event{
+			Summary:  "Rige Test2",
+			Location: "",
+			Start: &calendar.EventDateTime{
+				Date:     "2019-03-11",
+				TimeZone: "America/Toronto",
+			},
+			End: &calendar.EventDateTime{
+				Date:     "2019-03-11",
+				TimeZone: "America/Toronto",
+			},
+		}
+
+		calendarID := "primary"
+		event, err = srv.Events.Insert(calendarID, event).Do()
 		if err != nil {
-			log.Fatalf("Unable to retrieve next ten of the user's events: %v", err)
+			log.Fatalf("Unable to create event. %v\n", err)
 		}
-		fmt.Println("Upcoming events:")
-		if len(events.Items) == 0 {
-			fmt.Println("No upcoming events found.")
-		} else {
-			for _, item := range events.Items {
-				date := item.Start.DateTime
-				if date == "" {
-					date = item.Start.Date
-				}
-				fmt.Printf("%v (%v)\n", item.Summary, date)
-			}
-		}
+		fmt.Printf("Event created: %s\n", event.HtmlLink)
 
 		return nil
 	},
 }
 
+// remove an entry to the calendar
+var RemoveCalEntryCmd = &cobra.Command{
+	Use: "remove [month] [day] [name]",
+	Run: func(cmd *cobra.Command, args []string) {
+
+	},
+}
+
 //__________________________________________________________________________
+
+// getFileInThisPath - get a file in the path of THIS golang file
+func getFileInThisPath(filename string) (string, error) {
+	// get the config file
+	_, thisfilename, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", errors.New("No caller information")
+	}
+	filepath := path.Join(path.Dir(thisfilename), filename)
+	if _, err := os.Stat(filepath); os.IsNotExist(err) {
+		return filepath, fmt.Errorf("expected file at:\n\t%v", filepath)
+	}
+	return filepath, nil
+}
 
 // Retrieve a token, saves the token, then returns the generated client.
 func getClient(config *oauth2.Config) *http.Client {
 	// The file token.json stores the user's access and refresh tokens, and is
 	// created automatically when the authorization flow completes for the first
 	// time.
-	tokFile, _ := GetFileInThisPath("token.json") // ignore error here
+	tokFile, _ := getFileInThisPath("calendar_token.json") // ignore error here
 	tok, err := tokenFromFile(tokFile)
 	if err != nil {
 		tok = getTokenFromWeb(config)

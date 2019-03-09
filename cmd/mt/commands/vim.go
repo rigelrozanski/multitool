@@ -12,121 +12,93 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// tools intended to be used with vim
-var (
-	VIMCmd = &cobra.Command{
-		Use:   "vim",
-		Short: "tools intended to be called from vim",
-	}
-	CreateTestCmd = &cobra.Command{
-		Use:   "create-test [name] [source-file]",
-		Short: "create a go-lang test shell in the correct file",
-		Args:  cobra.ExactArgs(2),
-		RunE:  createTestCmd,
-	}
-	DebugPrintsCmd = &cobra.Command{
-		Use:   "debug-prints [name] [source-file] [lineno]",
-		Short: "add prints to all the possible end points within a function",
-		Args:  cobra.ExactArgs(3),
-		RunE:  debugPrintsCmd,
-	}
-	RemoveDebugPrintsCmd = &cobra.Command{
-		Use:   "remove-debug-prints [source-file] [lineno]",
-		Short: "remove debug prints",
-		Args:  cobra.ExactArgs(2),
-		RunE:  removeDebugPrintsCmd,
-	}
-	ColumnSpacesCmd = &cobra.Command{
-		Use:   "column-width [source-file] [lineno-start] [lineno-end] [column-characters]",
-		Short: "add spaces up to the column specified",
-		Args:  cobra.ExactArgs(4),
-		RunE:  columnSpacesCmd,
-	}
-	RemoveEveryOtherCmd = &cobra.Command{
-		Use:   "remove-every-other [source-file] [lineno-start] [lineno-end]",
-		Short: "remove every other line (starting with the first line",
-		Args:  cobra.ExactArgs(3),
-		RunE:  removeEveryOtherCmd,
-	}
-	CreateNewXxx = &cobra.Command{
-		Use:   "create-new-xxx [source-file] [lineno-start] [lineno-end]",
-		Short: "create a NewXxx function for the highlighted struct",
-		Args:  cobra.ExactArgs(3),
-		RunE:  createNewXxx,
-	}
-)
-
 func init() {
-	VIMCmd.AddCommand(CreateTestCmd)
-	VIMCmd.AddCommand(DebugPrintsCmd)
-	VIMCmd.AddCommand(RemoveDebugPrintsCmd)
-	VIMCmd.AddCommand(ColumnSpacesCmd)
-	VIMCmd.AddCommand(RemoveEveryOtherCmd)
-	VIMCmd.AddCommand(CreateNewXxx)
-	RootCmd.AddCommand(VIMCmd)
+	vimCmd.AddCommand(createTestCmd)
+	vimCmd.AddCommand(debugPrintsCmd)
+	vimCmd.AddCommand(removeDebugPrintsCmd)
+	vimCmd.AddCommand(columnSpacesCmd)
+	vimCmd.AddCommand(removeEveryOtherCmd)
+	vimCmd.AddCommand(createNewXxx)
+	RootCmd.AddCommand(vimCmd)
 }
 
-func createTestCmd(cmd *cobra.Command, args []string) error {
+// tools intended to be used with vim
+var vimCmd = &cobra.Command{
+	Use:   "vim",
+	Short: "tools intended to be called from vim",
+}
 
-	fnName := args[0]
-	sourceFile := args[1]
+var createTestCmd = &cobra.Command{
+	Use:   "create-test [name] [source-file]",
+	Short: "create a go-lang test shell in the correct file",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
 
-	// construct the test file
-	base := filepath.Base(sourceFile)
-	name := strings.Split(base, ".")[0] + "_test.go"
-	dir := filepath.Dir(sourceFile)
-	testFile := path.Join(dir, name)
+		fnName := args[0]
+		sourceFile := args[1]
 
-	testFnStr := fmt.Sprintf("\nfunc Test%v(t *testing.T) { \n\n}", fnName)
+		// construct the test file
+		base := filepath.Base(sourceFile)
+		name := strings.Split(base, ".")[0] + "_test.go"
+		dir := filepath.Dir(sourceFile)
+		testFile := path.Join(dir, name)
 
-	var lines []string
-	if common.FileExists(testFile) {
-		var err error
-		lines, err = common.ReadLines(testFile)
+		testFnStr := fmt.Sprintf("\nfunc Test%v(t *testing.T) { \n\n}", fnName)
+
+		var lines []string
+		if common.FileExists(testFile) {
+			var err error
+			lines, err = common.ReadLines(testFile)
+			if err != nil {
+				return err
+			}
+			lines = append(lines, testFnStr)
+		} else {
+			sourceLines, err := common.ReadLines(sourceFile)
+			if err != nil {
+				return err
+			}
+			lines = []string{
+				sourceLines[0], //package
+				"\nimport \"testing\"",
+				testFnStr,
+			}
+		}
+
+		fmt.Println(testFile)
+		return common.WriteLines(lines, testFile)
+	},
+}
+
+var debugPrintsCmd = &cobra.Command{
+	Use:   "debug-prints [name] [source-file] [lineno]",
+	Short: "add prints to all the possible end points within a function",
+	Args:  cobra.ExactArgs(3),
+	RunE: func(cmd *cobra.Command, args []string) error {
+
+		name := args[0]
+		sourceFile := args[1]
+		startLineNo, err := strconv.Atoi(args[2])
 		if err != nil {
 			return err
 		}
-		lines = append(lines, testFnStr)
-	} else {
-		sourceLines, err := common.ReadLines(sourceFile)
+
+		if !common.FileExists(sourceFile) {
+			return errors.New("file don't exist")
+		}
+
+		lines, err := common.ReadLines(sourceFile)
 		if err != nil {
 			return err
 		}
-		lines = []string{
-			sourceLines[0], //package
-			"\nimport \"testing\"",
-			testFnStr,
+		lines = insertPrints(lines, startLineNo, name)
+
+		err = common.WriteLines(lines, sourceFile)
+		if err != nil {
+			return err
 		}
-	}
-
-	fmt.Println(testFile)
-	return common.WriteLines(lines, testFile)
-}
-
-func debugPrintsCmd(cmd *cobra.Command, args []string) error {
-
-	name := args[0]
-	sourceFile := args[1]
-	startLineNo, err := strconv.Atoi(args[2])
-	if err != nil {
-		return err
-	}
-
-	if !common.FileExists(sourceFile) {
-		return errors.New("file don't exist")
-	}
-
-	lines, err := common.ReadLines(sourceFile)
-	if err != nil {
-		return err
-	}
-	lines = insertPrints(lines, startLineNo, name)
-
-	err = common.WriteLines(lines, sourceFile)
-	if err != nil {
-		return err
-	}
-	return nil
+		return nil
+	},
 }
 
 func insertPrints(lines []string, startLineNo int, name string) []string {
@@ -156,29 +128,34 @@ func insertPrints(lines []string, startLineNo int, name string) []string {
 	return lines
 }
 
-func removeDebugPrintsCmd(cmd *cobra.Command, args []string) error {
+var removeDebugPrintsCmd = &cobra.Command{
+	Use:   "remove-debug-prints [source-file] [lineno]",
+	Short: "remove debug prints",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
 
-	sourceFile := args[0]
-	startLineNo, err := strconv.Atoi(args[1])
-	if err != nil {
-		return err
-	}
+		sourceFile := args[0]
+		startLineNo, err := strconv.Atoi(args[1])
+		if err != nil {
+			return err
+		}
 
-	if !common.FileExists(sourceFile) {
-		return errors.New("file don't exist")
-	}
+		if !common.FileExists(sourceFile) {
+			return errors.New("file don't exist")
+		}
 
-	lines, err := common.ReadLines(sourceFile)
-	if err != nil {
-		return err
-	}
-	lines = removePrints(lines, startLineNo)
+		lines, err := common.ReadLines(sourceFile)
+		if err != nil {
+			return err
+		}
+		lines = removePrints(lines, startLineNo)
 
-	err = common.WriteLines(lines, sourceFile)
-	if err != nil {
-		return err
-	}
-	return nil
+		err = common.WriteLines(lines, sourceFile)
+		if err != nil {
+			return err
+		}
+		return nil
+	},
 }
 
 func removePrints(lines []string, startLineNo int) []string {
@@ -221,157 +198,173 @@ func loadFileVisualMode(args []string) (srcFile string, startLineNo, endLineNo i
 	return srcFile, startLineNo, endLineNo, lines, nil
 }
 
-func columnSpacesCmd(cmd *cobra.Command, args []string) error {
+var columnSpacesCmd = &cobra.Command{
+	Use:   "column-width [source-file] [lineno-start] [lineno-end] [column-characters]",
+	Short: "add spaces up to the column specified",
+	Args:  cobra.ExactArgs(4),
+	RunE: func(cmd *cobra.Command, args []string) error {
 
-	srcFile, startLineNo, endLineNo, lines, err := loadFileVisualMode(args)
-	if err != nil {
-		return err
-	}
-
-	columnChars, err := strconv.Atoi(args[3])
-	if err != nil {
-		return err
-	}
-
-	for i := startLineNo; i <= endLineNo; i++ {
-		line := lines[i]
-		len := len(line)
-		if len >= columnChars {
-			continue
+		srcFile, startLineNo, endLineNo, lines, err := loadFileVisualMode(args)
+		if err != nil {
+			return err
 		}
-		for j := len; j <= columnChars; j++ {
-			line += " "
-		}
-		lines[i] = line
-	}
-	//debugPrint := fmt.Sprintf("startLineNo: %v endLineNo: %v", startLineNo, endLineNo)
-	//lines[startLineNo] += debugPrint
 
-	err = common.WriteLines(lines, srcFile)
-	if err != nil {
-		return err
-	}
-	return nil
+		columnChars, err := strconv.Atoi(args[3])
+		if err != nil {
+			return err
+		}
+
+		for i := startLineNo; i <= endLineNo; i++ {
+			line := lines[i]
+			len := len(line)
+			if len >= columnChars {
+				continue
+			}
+			for j := len; j <= columnChars; j++ {
+				line += " "
+			}
+			lines[i] = line
+		}
+		//debugPrint := fmt.Sprintf("startLineNo: %v endLineNo: %v", startLineNo, endLineNo)
+		//lines[startLineNo] += debugPrint
+
+		err = common.WriteLines(lines, srcFile)
+		if err != nil {
+			return err
+		}
+		return nil
+	},
 }
 
+// TODO complete
 // remove the first line
-func removeEveryOtherCmd(cmd *cobra.Command, args []string) error {
+var removeEveryOtherCmd = &cobra.Command{
+	Use:   "remove-every-other [source-file] [lineno-start] [lineno-end]",
+	Short: "remove every other line (starting with the first line",
+	Args:  cobra.ExactArgs(3),
+	RunE: func(cmd *cobra.Command, args []string) error {
 
-	srcFile, startLineNo, endLineNo, lines, err := loadFileVisualMode(args)
-	if err != nil {
-		return err
-	}
-
-	var outLines []string
-	if startLineNo > 0 {
-		outLines = lines[:startLineNo]
-	}
-
-	makeEven := 0
-	if startLineNo%2 == 0 {
-		makeEven = 1
-	}
-	for i := startLineNo; i <= endLineNo; i++ {
-		if (i+makeEven)%2 == 0 {
-			outLines = append(outLines[:], lines[i])
+		srcFile, startLineNo, endLineNo, lines, err := loadFileVisualMode(args)
+		if err != nil {
+			return err
 		}
-	}
 
-	if endLineNo+1 < len(lines) {
-		outLines = append(outLines[:], lines[endLineNo:]...)
-	}
-
-	//debugPrint := fmt.Sprintf(" hits: %v", out)
-	//lines[startLineNo] += debugPrint
-
-	err = common.WriteLines(outLines, srcFile)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func createNewXxx(cmd *cobra.Command, args []string) error {
-
-	srcFile, startLineNo, endLineNo, lines, err := loadFileVisualMode(args)
-	if err != nil {
-		return err
-	}
-
-	// get the function name
-	split0 := strings.Split(lines[startLineNo], " ")
-	var name string
-	for i := 0; i < len(split0); i-- {
-		if split0[i] == "type" && split0[i+2] == "struct" {
-			name = split0[i+1]
-			break
+		var outLines []string
+		if startLineNo > 0 {
+			outLines = lines[:startLineNo]
 		}
-	}
 
-	// get the field names and types
-	var fieldNames, fieldNamesLC, fieldTypes []string
-
-	for i := startLineNo + 1; i <= endLineNo; i++ {
-		spliti := strings.Fields(lines[i])
-
-		var fieldName, fieldNameLC, fieldType string
-		success := false
-		for j := 0; j < len(spliti); j++ {
-			word := spliti[j]
-			if len(word) > 0 {
-				if fieldName == "" {
-					fieldName = word
-					fieldNameLC = strings.ToLower(string(word[0])) + string(word[1:])
-					continue
-				}
-				if fieldType == "" {
-					fieldType = word
-					success = true
-					break
-				}
+		makeEven := 0
+		if startLineNo%2 == 0 {
+			makeEven = 1
+		}
+		for i := startLineNo; i <= endLineNo; i++ {
+			if (i+makeEven)%2 == 0 {
+				outLines = append(outLines[:], lines[i])
 			}
 		}
-		if success {
-			fieldNamesLC = append(fieldNamesLC[:], fieldNameLC)
-			fieldNames = append(fieldNames[:], fieldName)
-			fieldTypes = append(fieldTypes[:], fieldType)
+
+		if endLineNo+1 < len(lines) {
+			outLines = append(outLines[:], lines[endLineNo:]...)
 		}
-	}
 
-	// create the newXxx struct
-	newXxx := []string{""}
+		//debugPrint := fmt.Sprintf(" hits: %v", out)
+		//lines[startLineNo] += debugPrint
 
-	// comment above function
-	newXxx = append(newXxx[:], fmt.Sprintf("// %v - TODO", name))
+		err = common.WriteLines(outLines, srcFile)
+		if err != nil {
+			return err
+		}
+		return nil
+	},
+}
 
-	// function header
-	fnHead := fmt.Sprintf("func New%v(", name)
-	for i := 0; i < len(fieldNamesLC); i++ {
-		fnHead += fmt.Sprintf("%s %s, ", fieldNamesLC[i], fieldTypes[i])
-	}
-	fnHead = fmt.Sprintf("%v) %v {", fnHead[:len(fnHead)-2], name) // remove last comma, return arg
+var createNewXxx = &cobra.Command{
+	Use:   "create-new-xxx [source-file] [lineno-start] [lineno-end]",
+	Short: "create a NewXxx function for the highlighted struct",
+	Args:  cobra.ExactArgs(3),
+	RunE: func(cmd *cobra.Command, args []string) error {
 
-	newXxx = append(newXxx[:],
-		fnHead,
-		fmt.Sprintf("    return %v {", name)) // first line in function
+		srcFile, startLineNo, endLineNo, lines, err := loadFileVisualMode(args)
+		if err != nil {
+			return err
+		}
 
-	// type definition lines
-	for i := 0; i < len(fieldNames); i++ {
-		newline := fmt.Sprintf("        %s: %s, ", fieldNames[i], fieldNamesLC[i])
-		newXxx = append(newXxx[:], newline)
-	}
+		// get the function name
+		split0 := strings.Split(lines[startLineNo], " ")
+		var name string
+		for i := 0; i < len(split0); i-- {
+			if split0[i] == "type" && split0[i+2] == "struct" {
+				name = split0[i+1]
+				break
+			}
+		}
 
-	// closing lines
-	newXxx = append(newXxx[:], "    }", "}")
+		// get the field names and types
+		var fieldNames, fieldNamesLC, fieldTypes []string
 
-	// compile and save the final file
-	var outLines []string
-	outLines = append(outLines[:], lines[:endLineNo+1]...)
-	outLines = append(outLines[:], newXxx...)
-	outLines = append(outLines[:], lines[endLineNo+1:]...)
-	err = common.WriteLines(outLines, srcFile)
-	if err != nil {
-		return err
-	}
-	return nil
+		for i := startLineNo + 1; i <= endLineNo; i++ {
+			spliti := strings.Fields(lines[i])
+
+			var fieldName, fieldNameLC, fieldType string
+			success := false
+			for j := 0; j < len(spliti); j++ {
+				word := spliti[j]
+				if len(word) > 0 {
+					if fieldName == "" {
+						fieldName = word
+						fieldNameLC = strings.ToLower(string(word[0])) + string(word[1:])
+						continue
+					}
+					if fieldType == "" {
+						fieldType = word
+						success = true
+						break
+					}
+				}
+			}
+			if success {
+				fieldNamesLC = append(fieldNamesLC[:], fieldNameLC)
+				fieldNames = append(fieldNames[:], fieldName)
+				fieldTypes = append(fieldTypes[:], fieldType)
+			}
+		}
+
+		// create the newXxx struct
+		newXxx := []string{""}
+
+		// comment above function
+		newXxx = append(newXxx[:], fmt.Sprintf("// %v - TODO", name))
+
+		// function header
+		fnHead := fmt.Sprintf("func New%v(", name)
+		for i := 0; i < len(fieldNamesLC); i++ {
+			fnHead += fmt.Sprintf("%s %s, ", fieldNamesLC[i], fieldTypes[i])
+		}
+		fnHead = fmt.Sprintf("%v) %v {", fnHead[:len(fnHead)-2], name) // remove last comma, return arg
+
+		newXxx = append(newXxx[:],
+			fnHead,
+			fmt.Sprintf("    return %v {", name)) // first line in function
+
+		// type definition lines
+		for i := 0; i < len(fieldNames); i++ {
+			newline := fmt.Sprintf("        %s: %s, ", fieldNames[i], fieldNamesLC[i])
+			newXxx = append(newXxx[:], newline)
+		}
+
+		// closing lines
+		newXxx = append(newXxx[:], "    }", "}")
+
+		// compile and save the final file
+		var outLines []string
+		outLines = append(outLines[:], lines[:endLineNo+1]...)
+		outLines = append(outLines[:], newXxx...)
+		outLines = append(outLines[:], lines[endLineNo+1:]...)
+		err = common.WriteLines(outLines, srcFile)
+		if err != nil {
+			return err
+		}
+		return nil
+	},
 }
