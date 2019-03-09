@@ -129,9 +129,8 @@ func insertPrints(lines []string, startLineNo int, name string) []string {
 }
 
 var removeDebugPrintsCmd = &cobra.Command{
-	Use:   "remove-debug-prints [source-file] [lineno]",
-	Short: "remove debug prints",
-	Args:  cobra.ExactArgs(2),
+	Use:  "remove-debug-prints [source-file] [lineno]",
+	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 
 		sourceFile := args[0]
