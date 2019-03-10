@@ -77,11 +77,11 @@ func dayNumber(day string) string {
 	if len(day) != 2 {
 		return ""
 	}
-	conv1, err := strconv.Atoi(string(day[0]))
+	_, err := strconv.Atoi(string(day[0]))
 	if err != nil {
 		return ""
 	}
-	conv2, err := strconv.Atoi(string(day[1]))
+	_, err = strconv.Atoi(string(day[1]))
 	if err != nil {
 		return ""
 	}
@@ -129,19 +129,21 @@ var AddCalEntryCmd = &cobra.Command{
 			if len(line) == 0 {
 				return fmt.Errorf("empty line: %v", i)
 			}
-			monthI := monthNumber(line[0:2])
-			dayI := dayNumber(line[4:5])
+			monthI := monthNumber(line[0:3])
+			dayI := dayNumber(line[4:6])
 			if len(month) == 0 && len(monthI) == 2 {
 				month = monthI
 			}
 			if len(day) == 0 && len(dayI) == 2 {
 				day = dayI
 			}
+			if len(month) != 0 && len(day) != 0 {
+				break
+			}
 		}
 
 		// construct the date
 		date := fmt.Sprintf("%v-%v-%v", year, month, day)
-		panic(fmt.Sprintf("debug date, name: %v, %v\n", date, name))
 
 		///////////////////////////////////////////////////////////
 		// Get credentials and send the event to google calendar
@@ -156,7 +158,7 @@ var AddCalEntryCmd = &cobra.Command{
 		}
 
 		// If modifying these scopes, delete your previously saved token.json.
-		config, err := google.ConfigFromJSON(b, calendar.CalendarReadonlyScope)
+		config, err := google.ConfigFromJSON(b, calendar.CalendarEventsScope)
 		if err != nil {
 			log.Fatalf("Unable to parse client secret file to config: %v", err)
 		}
