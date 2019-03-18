@@ -333,7 +333,7 @@ var createNewXxx = &cobra.Command{
 		newXxx := []string{""}
 
 		// comment above function
-		newXxx = append(newXxx[:], fmt.Sprintf("// %v - TODO", name))
+		newXxx = append(newXxx[:], fmt.Sprintf("// %v creates a new %v object", name, name))
 
 		// function header
 		fnHead := fmt.Sprintf("func New%v(", name)
