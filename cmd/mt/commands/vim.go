@@ -19,6 +19,7 @@ func init() {
 	vimCmd.AddCommand(columnSpacesCmd)
 	vimCmd.AddCommand(removeEveryOtherCmd)
 	vimCmd.AddCommand(createNewXxx)
+	vimCmd.AddCommand(createFunctionOf)
 	RootCmd.AddCommand(vimCmd)
 }
 
@@ -359,6 +360,50 @@ var createNewXxx = &cobra.Command{
 		var outLines []string
 		outLines = append(outLines[:], lines[:endLineNo+1]...)
 		outLines = append(outLines[:], newXxx...)
+		outLines = append(outLines[:], lines[endLineNo+1:]...)
+		err = common.WriteLines(outLines, srcFile)
+		if err != nil {
+			return err
+		}
+		return nil
+	},
+}
+
+var createFunctionOf = &cobra.Command{
+	Use:   "create-function-of [source-file] [lineno-start] [lineno-end]",
+	Short: "create a function of a struct",
+	Args:  cobra.ExactArgs(3),
+	RunE: func(cmd *cobra.Command, args []string) error {
+
+		srcFile, startLineNo, endLineNo, lines, err := loadFileVisualMode(args)
+		if err != nil {
+			return err
+		}
+
+		// get the function name
+		split0 := strings.Split(lines[startLineNo], " ")
+		var name string
+		for i := 0; i < len(split0); i-- {
+			if split0[i] == "type" && split0[i+2] == "struct" {
+				name = split0[i+1]
+				break
+			}
+		}
+
+		// get an abbreviation text
+		abbr := strings.ToLower(string(name[0]))
+
+		// create the function text
+		funcText := []string{"", "// TODO",
+			fmt.Sprintf("func (%v %v)FuncName() {", abbr, name),
+			"",
+			"}",
+		}
+
+		// compile and save the final file
+		var outLines []string
+		outLines = append(outLines[:], lines[:endLineNo+1]...)
+		outLines = append(outLines[:], funcText...)
 		outLines = append(outLines[:], lines[endLineNo+1:]...)
 		err = common.WriteLines(outLines, srcFile)
 		if err != nil {
