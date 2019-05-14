@@ -151,7 +151,10 @@ func getVarOrConstBlocks(lines []string, varOrConst string) (names []string) {
 				lcns := strings.Split(leftOfEq[0], ",")
 				for _, lcn := range lcns {
 					lcnT := strings.TrimSpace(lcn)
-					lcnT = strings.Fields(lcn)[0]
+					if fields := strings.Fields(lcn); len(fields) == 0 {
+						continue
+					}
+					lcnT = strings.Fields(lcnT)[0]
 					if unicode.IsLetter(rune(lcnT[0])) && string(lcnT[0]) == strings.ToUpper(string(lcnT[0])) {
 						names = append(names, lcnT)
 					}
@@ -171,7 +174,10 @@ func getVarOrConstBlocks(lines []string, varOrConst string) (names []string) {
 				lcns := strings.Split(leftOfEq[0], ",")
 				for _, lcn := range lcns {
 					lcnT := strings.TrimSpace(lcn)
-					lcnT = strings.Fields(lcn)[0]
+					if fields := strings.Fields(lcnT); len(fields) == 0 {
+						continue
+					}
+					lcnT = strings.Fields(lcnT)[0]
 					if unicode.IsLetter(rune(lcnT[0])) && string(lcnT[0]) == strings.ToUpper(string(lcnT[0])) {
 						names = append(names, lcnT)
 					}
