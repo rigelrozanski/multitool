@@ -19,111 +19,176 @@ func init() {
 
 // CreateAlias creates autogen code for exposed functions
 var CreateAlias = &cobra.Command{
-	Use: "create-alias",
+	Use:  "create-alias [dirs...]",
+	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		files, err := ioutil.ReadDir("./")
-		if err != nil {
-			return err
-		}
-
-		if len(files) == 0 {
-			return errors.New("no files")
-		}
 
 		thisPath, err := os.Getwd()
-		srcPrefix := path.Join(os.ExpandEnv("$GOPATH"), "src") + "/"
-		importDir := strings.TrimPrefix(thisPath, srcPrefix)
-		importName := path.Base(importDir)
-
 		if err != nil {
 			return err
 		}
-		var funcNames, constNames, varNames, typeNames []string
+		srcPrefix := path.Join(os.ExpandEnv("$GOPATH"), "src") + "/"
+		baseImportDir := strings.TrimPrefix(thisPath, srcPrefix)
 
-		for _, f := range files {
-			fname := f.Name()
-			if path.Ext(fname) == ".go" {
-				lines, err := common.ReadLines(fname)
-				if err != nil {
-					continue
-				}
+		var pas []PackageAlias
+		for _, dir := range args {
+			importDir := path.Join(baseImportDir, dir) + "/"
 
-				// get the exported functions
-				for _, line := range lines {
-					sep := strings.Fields(line)
-					if len(sep) > 2 && sep[0] == "func" {
-						if sep[1] == "init()" {
-							continue
-						}
-						if unicode.IsLetter(rune(sep[1][0])) && string(sep[1][0]) == strings.ToUpper(string(sep[1][0])) {
-							funcNames = append(funcNames, strings.Split(sep[1], "(")[0])
-						}
-					}
-				}
-
-				// get the exported constants
-				constNames = append(constNames, getVarOrConstBlocks(lines, "const")...)
-
-				// get the exported variables
-				varNames = append(varNames, getVarOrConstBlocks(lines, "var")...)
-
-				// get the exported types
-				for _, line := range lines {
-					sep := strings.Fields(line)
-					if len(sep) > 2 &&
-						sep[0] == "type" &&
-						unicode.IsLetter(rune(sep[1][0])) &&
-						string(sep[1][0]) == strings.ToUpper(string(sep[1][0])) {
-
-						typeNames = append(typeNames, sep[1])
-					}
-				}
-
-			}
-		}
-
-		if len(funcNames)+len(varNames)+len(constNames)+len(typeNames) == 0 {
-			return nil
-		}
-		out := fmt.Sprintf("import (\n\t%v\n)", importDir)
-
-		if len(constNames) > 0 {
-			out += fmt.Sprintf("\n\nconst (")
-			for _, constName := range constNames {
-				out += fmt.Sprintf("\n\t%v = %v.%v", constName, importName, constName)
-			}
-			out += fmt.Sprintf("\n)")
-		}
-
-		if len(funcNames)+len(varNames) > 0 {
-			out += fmt.Sprintf("\n\nvar (")
-			if len(funcNames) > 0 {
-				out += fmt.Sprintf("\n\t// functions aliases")
-				for _, funcName := range funcNames {
-					out += fmt.Sprintf("\n\t%v = %v.%v", funcName, importName, funcName)
-				}
+			filesDir := "./" + dir
+			files, err := ioutil.ReadDir(filesDir)
+			if err != nil {
+				return err
 			}
 
-			if len(varNames) > 0 {
-				out += fmt.Sprintf("\n\t// variable aliases")
-				for _, varName := range varNames {
-					out += fmt.Sprintf("\n\t%v = %v.%v", varName, importName, varName)
-				}
+			if len(files) == 0 {
+				return errors.New("no files")
 			}
-			out += fmt.Sprintf("\n)")
+
+			pa, err := CreatePackageAlias(importDir, files)
+			if err != nil {
+				return err
+			}
+			pas = append(pas, pa)
 		}
 
-		if len(typeNames) > 0 {
-			out += fmt.Sprintf("\n\ntype (")
-			for _, typeName := range typeNames {
-				out += fmt.Sprintf("\n\t%v = %v.%v", typeName, importName, typeName)
-			}
-			out += fmt.Sprintf("\n)")
-		}
-
+		packageName := path.Base(thisPath)
+		out := CompileOutput(packageName, pas)
 		fmt.Println(out)
 		return nil
 	},
+}
+
+// FileAliases - file alaises
+type PackageAlias struct {
+	Dir        string
+	Name       string
+	FuncNames  []string
+	VarNames   []string
+	ConstNames []string
+	TypeNames  []string
+}
+
+// NewfileAliases creates a new fileAliases object
+func CreatePackageAlias(importDir string, files []os.FileInfo) (PackageAlias, error) {
+
+	fa := PackageAlias{
+		Dir:  importDir,
+		Name: path.Base(importDir),
+	}
+	localDir := path.Base(importDir) + "/"
+
+	for _, f := range files {
+		fname := f.Name()
+		if path.Ext(fname) != ".go" || strings.HasSuffix(fname, "_test.go") {
+			continue
+		}
+		filePath := path.Join(localDir, fname)
+		lines, err := common.ReadLines(filePath)
+		if err != nil {
+			continue
+		}
+
+		// get the exported functions
+		for _, line := range lines {
+			sep := strings.Fields(line)
+			if len(sep) > 2 && sep[0] == "func" {
+				if sep[1] == "init()" {
+					continue
+				}
+				if unicode.IsLetter(rune(sep[1][0])) && string(sep[1][0]) == strings.ToUpper(string(sep[1][0])) {
+					fa.FuncNames = append(fa.FuncNames, strings.Split(sep[1], "(")[0])
+				}
+			}
+		}
+
+		// get the exported constants
+		fa.ConstNames = append(fa.ConstNames, getVarOrConstBlocks(lines, "const")...)
+
+		// get the exported variables
+		fa.VarNames = append(fa.VarNames, getVarOrConstBlocks(lines, "var")...)
+
+		// get the exported types
+		for _, line := range lines {
+			sep := strings.Fields(line)
+			if len(sep) > 2 &&
+				sep[0] == "type" &&
+				unicode.IsLetter(rune(sep[1][0])) &&
+				string(sep[1][0]) == strings.ToUpper(string(sep[1][0])) {
+
+				fa.TypeNames = append(fa.TypeNames, sep[1])
+			}
+		}
+	}
+
+	return fa, nil
+}
+
+// compile package aliases into output string
+func CompileOutput(packageName string, pas []PackageAlias) string {
+
+	out := fmt.Sprintf("// autogenerated code using github.com/rigelrozanski/multitool")
+	out += fmt.Sprintf("\n// aliases generated for the following subdirectories:")
+	for _, alias := range pas {
+		out += fmt.Sprintf("\n// ALIASGEN: %v", alias.Dir)
+	}
+	out += fmt.Sprintf("\npackage %s", packageName)
+
+	out += fmt.Sprintf("\n\nimport (")
+	for _, alias := range pas {
+		out += fmt.Sprintf("\n\t%v", alias.Dir)
+	}
+	out += fmt.Sprintf("\n)")
+
+	var constLines, funcLines, varLines, typeLines []string
+	for _, pa := range pas {
+		for _, constName := range pa.ConstNames {
+			constLines = append(constLines, fmt.Sprintf("\n\t%v = %v.%v", constName, pa.Name, constName))
+		}
+		for _, funcName := range pa.FuncNames {
+			funcLines = append(funcLines, fmt.Sprintf("\n\t%v = %v.%v", funcName, pa.Name, funcName))
+		}
+		for _, varName := range pa.VarNames {
+			varLines = append(varLines, fmt.Sprintf("\n\t%v = %v.%v", varName, pa.Name, varName))
+		}
+		for _, typeName := range pa.TypeNames {
+			typeLines = append(typeLines, fmt.Sprintf("\n\t%v = %v.%v", typeName, pa.Name, typeName))
+		}
+	}
+
+	if len(constLines) > 0 {
+		out += fmt.Sprintf("\n\nconst (")
+		for _, constLine := range constLines {
+			out += constLine
+		}
+		out += fmt.Sprintf("\n)")
+	}
+
+	if len(funcLines)+len(varLines) > 0 {
+		out += fmt.Sprintf("\n\nvar (")
+		if len(funcLines) > 0 {
+			out += fmt.Sprintf("\n\t// functions aliases")
+			for _, funcLine := range funcLines {
+				out += funcLine
+			}
+		}
+
+		if len(varLines) > 0 {
+			out += fmt.Sprintf("\n\n\t// variable aliases")
+			for _, varLine := range varLines {
+				out += varLine
+			}
+		}
+		out += fmt.Sprintf("\n)")
+	}
+
+	if len(typeLines) > 0 {
+		out += fmt.Sprintf("\n\ntype (")
+		for _, typeLine := range typeLines {
+			out += typeLine
+		}
+		out += fmt.Sprintf("\n)")
+	}
+	return out
 }
 
 func getVarOrConstBlocks(lines []string, varOrConst string) (names []string) {
