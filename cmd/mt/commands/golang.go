@@ -37,7 +37,7 @@ var UpdateAlias = &cobra.Command{
 		var importDirs, fullDirs []string
 		for _, line := range lines {
 			if strings.Contains(line, AliasKeyword) {
-				importDir := strings.TrimSpace(strings.Split(line, AliasKeyword)[0])
+				importDir := strings.TrimSpace(strings.Split(line, AliasKeyword)[1])
 				importDirs = append(importDirs, importDir)
 				fullDirs = append(fullDirs, path.Join(srcPrefix, importDir))
 			}
