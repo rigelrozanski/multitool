@@ -75,7 +75,6 @@ var CreateAlias = &cobra.Command{
 		for _, dir := range args {
 			importDir := path.Join(baseImportDir, dir) + "/"
 			importDirs = append(importDirs, importDir)
-			//fullDirs = append(fullDirs, path.Join(thisPath, dir))
 			fullDirs = append(fullDirs, path.Join(srcPrefix, importDir))
 		}
 
@@ -149,36 +148,102 @@ func CreatePackageAlias(importDir, fullDir string, files []os.FileInfo) (Package
 		// get the exported functions
 		for _, line := range lines {
 			sep := strings.Fields(line)
-			if len(sep) > 2 && sep[0] == "func" {
+			if len(sep) > 1 && sep[0] == "func" {
 				if sep[1] == "init()" {
 					continue
 				}
-				if unicode.IsLetter(rune(sep[1][0])) && string(sep[1][0]) == strings.ToUpper(string(sep[1][0])) {
+				if firstCharIsUpperLetter(sep[1]) {
 					fa.FuncNames = append(fa.FuncNames, strings.Split(sep[1], "(")[0])
 				}
 			}
 		}
 
 		// get the exported constants
-		fa.ConstNames = append(fa.ConstNames, getVarOrConstBlocks(lines, "const")...)
+		fa.ConstNames = append(fa.ConstNames, getDefinitionBlocks(lines, "const")...)
 
 		// get the exported variables
-		fa.VarNames = append(fa.VarNames, getVarOrConstBlocks(lines, "var")...)
+		fa.VarNames = append(fa.VarNames, getDefinitionBlocks(lines, "var")...)
 
-		// get the exported types
-		for _, line := range lines {
-			sep := strings.Fields(line)
-			if len(sep) > 2 &&
-				sep[0] == "type" &&
-				unicode.IsLetter(rune(sep[1][0])) &&
-				string(sep[1][0]) == strings.ToUpper(string(sep[1][0])) {
-
-				fa.TypeNames = append(fa.TypeNames, sep[1])
-			}
-		}
+		// get the exported types defined in blocks
+		fa.TypeNames = append(fa.TypeNames, getDefinitionBlocks(lines, "type")...)
 	}
 
 	return fa, nil
+}
+
+// indicatorWord is either var or const or type
+func getDefinitionBlocks(lines []string, indicatorWord string) (names []string) {
+
+	withinBlock := false // within a "var (" or "const (" or "type (" block
+
+	for _, line := range lines {
+		switch {
+		case strings.HasPrefix(line, indicatorWord+" (") && withinBlock == false:
+			withinBlock = true
+			continue
+		case strings.HasPrefix(line, ")") && withinBlock == true:
+			withinBlock = false
+			continue
+
+		case withinBlock:
+			sep := strings.Fields(line)
+			switch {
+			case strings.HasPrefix(line, "\t\t"): // more then two tabs means is a part of another structure
+				continue
+			case len(sep) < 2:
+				continue
+			case !firstCharIsUpperLetter(sep[0]):
+				continue
+			default:
+				leftOfEq := strings.Split(line, "=")
+				lcns := strings.Split(leftOfEq[0], ",")
+				for _, lcn := range lcns {
+					lcnT := strings.TrimSpace(lcn)
+					if fields := strings.Fields(lcn); len(fields) == 0 {
+						continue
+					}
+					lcnT = strings.Fields(lcnT)[0]
+					if firstCharIsUpperLetter(lcnT) {
+						names = append(names, lcnT)
+					}
+				}
+			}
+
+		case strings.HasPrefix(line, indicatorWord) && withinBlock == false:
+			sep := strings.Fields(line)
+			switch {
+			case strings.HasPrefix(line, "\t\t"): // more then two tabs means is a part of another structure
+				continue
+			case len(sep) < 2:
+				continue
+			case !firstCharIsUpperLetter(sep[1]):
+				continue
+			default:
+				afterIndicator := strings.TrimPrefix(line, indicatorWord+" ")
+				leftOfEq := strings.Split(afterIndicator, "=")
+				lcns := strings.Split(leftOfEq[0], ",")
+				for _, lcn := range lcns {
+					lcnT := strings.TrimSpace(lcn)
+					if fields := strings.Fields(lcnT); len(fields) == 0 {
+						continue
+					}
+					lcnT = strings.Fields(lcnT)[0]
+					if firstCharIsUpperLetter(lcnT) {
+						names = append(names, lcnT)
+					}
+				}
+			}
+		}
+	}
+	return names
+}
+
+func firstCharIsUpperLetter(s string) bool {
+	return firstCharIsLetter(s) && string(s[0]) == strings.ToUpper(string(s[0]))
+}
+
+func firstCharIsLetter(s string) bool {
+	return unicode.IsLetter(rune(s[0]))
 }
 
 // compile package aliases into output string
@@ -248,66 +313,4 @@ func CompileOutput(packageName string, pas []PackageAlias) string {
 		out += fmt.Sprintf("\n)")
 	}
 	return out
-}
-
-func getVarOrConstBlocks(lines []string, varOrConst string) (names []string) {
-
-	withinBlock := false // within a "var (" or "const (" block
-
-	for _, line := range lines {
-		switch {
-		case strings.HasPrefix(line, varOrConst+" (") && withinBlock == false:
-			withinBlock = true
-			continue
-		case strings.HasPrefix(line, ")") && withinBlock == true:
-			withinBlock = false
-			continue
-
-		case withinBlock:
-			sep := strings.Fields(line)
-			switch {
-			case len(sep) < 2:
-				continue
-			case !unicode.IsLetter(rune(sep[0][0])):
-				continue
-			default:
-				leftOfEq := strings.Split(line, "=")
-				lcns := strings.Split(leftOfEq[0], ",")
-				for _, lcn := range lcns {
-					lcnT := strings.TrimSpace(lcn)
-					if fields := strings.Fields(lcn); len(fields) == 0 {
-						continue
-					}
-					lcnT = strings.Fields(lcnT)[0]
-					if unicode.IsLetter(rune(lcnT[0])) && string(lcnT[0]) == strings.ToUpper(string(lcnT[0])) {
-						names = append(names, lcnT)
-					}
-				}
-			}
-
-		case strings.HasPrefix(line, varOrConst) && withinBlock == false:
-			sep := strings.Fields(line)
-			switch {
-			case len(sep) < 2:
-				continue
-			case !unicode.IsLetter(rune(sep[1][0])):
-				continue
-			default:
-				afterConst := strings.TrimPrefix(line, varOrConst+" ")
-				leftOfEq := strings.Split(afterConst, "=")
-				lcns := strings.Split(leftOfEq[0], ",")
-				for _, lcn := range lcns {
-					lcnT := strings.TrimSpace(lcn)
-					if fields := strings.Fields(lcnT); len(fields) == 0 {
-						continue
-					}
-					lcnT = strings.Fields(lcnT)[0]
-					if unicode.IsLetter(rune(lcnT[0])) && string(lcnT[0]) == strings.ToUpper(string(lcnT[0])) {
-						names = append(names, lcnT)
-					}
-				}
-			}
-		}
-	}
-	return names
 }
