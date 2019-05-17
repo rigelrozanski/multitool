@@ -39,16 +39,20 @@ var UpdateAlias = &cobra.Command{
 			if strings.Contains(line, AliasKeyword) {
 				importDir := strings.TrimSpace(strings.Split(line, AliasKeyword)[1])
 				importDirs = append(importDirs, importDir)
-				fullDirs = append(fullDirs, path.Join(srcPrefix, importDir))
+				fullDir := path.Join(srcPrefix, importDir)
+				fullDirs = append(fullDirs, fullDir)
 			}
 		}
 
-		thisPath, err := os.Getwd()
-		if err != nil {
-			return err
-		}
+		aliasFilePath := args[0]
+		if !common.FileExists(aliasFilePath) {
+			thisPath, err := os.Getwd()
+			if err != nil {
+				return err
+			}
 
-		aliasFilePath := path.Join(thisPath, args[0])
+			aliasFilePath = path.Join(thisPath, args[0])
+		}
 		packageName := path.Base(path.Dir(aliasFilePath))
 		return CreateAliasFromDirs(packageName, aliasFilePath, importDirs, fullDirs)
 	},
