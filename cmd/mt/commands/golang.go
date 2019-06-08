@@ -18,8 +18,12 @@ func init() {
 	RootCmd.AddCommand(UpdateAlias)
 }
 
-// keyword for alias gen
-const AliasKeyword = "ALIASGEN:"
+const (
+	// keyword for alias gen
+	AliasKeyword = "ALIASGEN:"
+	// escape word to not include in alias file
+	NoAliasEsc = "noalias"
+)
 
 // CreateAlias creates autogen code for exposed functions
 var UpdateAlias = &cobra.Command{
@@ -145,8 +149,25 @@ func CreatePackageAlias(importDir, fullDir string, files []os.FileInfo) (Package
 			continue
 		}
 
+		// top level escape
+		if len(lines) > 0 && strings.Contains(lines[0], NoAliasEsc) {
+			continue
+		}
+
 		// get the exported functions
+		escNext := false
 		for _, line := range lines {
+			if escNext {
+				escNext = false
+				continue
+			}
+			if commentLineHasEsc(line) {
+				escNext = true
+				continue
+			}
+			if strings.Contains(line, NoAliasEsc) {
+				continue
+			}
 			sep := strings.Fields(line)
 			if len(sep) > 1 && sep[0] == "func" {
 				if sep[1] == "init()" {
@@ -171,13 +192,22 @@ func CreatePackageAlias(importDir, fullDir string, files []os.FileInfo) (Package
 	return fa, nil
 }
 
-// indicatorWord is either var or const or type
+// indicatorWord is either: "var", "const", or "type"
 func getDefinitionBlocks(lines []string, indicatorWord string) (names []string) {
 
 	withinBlock := false // within a "var (" or "const (" or "type (" block
 
+	escNext := false
 	for _, line := range lines {
 		switch {
+		case escNext:
+			escNext = false
+			continue
+		case commentLineHasEsc(line):
+			escNext = true
+			continue
+		case strings.Contains(line, NoAliasEsc):
+			continue
 		case strings.HasPrefix(line, indicatorWord+" (") && withinBlock == false:
 			withinBlock = true
 			continue
@@ -244,6 +274,14 @@ func firstCharIsUpperLetter(s string) bool {
 
 func firstCharIsLetter(s string) bool {
 	return unicode.IsLetter(rune(s[0]))
+}
+
+func commentLineHasEsc(line string) bool {
+	sep := strings.Fields(line)
+	if len(sep) > 2 && sep[0] == "//" && strings.Contains(line, NoAliasEsc) {
+		return true
+	}
+	return false
 }
 
 // compile package aliases into output string
