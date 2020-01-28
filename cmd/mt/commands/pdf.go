@@ -129,7 +129,8 @@ func bookCmd(cmd *cobra.Command, args []string) error {
 		pgCount += numInserts
 	}
 
-	midPage := pgCount/2 + modPg
+	midPage := pgCount/2 + 1
+	fmt.Printf("debug modPg: %v\n", modPg)
 
 	var orderedFiles []string
 	for i := 0; midPage+i < pgCount; i += 2 {

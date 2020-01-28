@@ -5,6 +5,7 @@ go 1.12
 require (
 	github.com/atotto/clipboard v0.1.2
 	github.com/jung-kurt/gofpdf v1.4.0
+	github.com/magiconair/properties v1.8.0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/pdfcpu/pdfcpu v0.2.6-0.20191115001021-1e3294bc5ab2
 	github.com/rigelrozanski/common v0.0.0-20190409033859-375d1f6a3b25

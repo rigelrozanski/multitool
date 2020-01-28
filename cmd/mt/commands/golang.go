@@ -77,7 +77,10 @@ var CreateAlias = &cobra.Command{
 
 		var importDirs, fullDirs []string
 		for _, dir := range args {
-			importDir := path.Join(baseImportDir, dir) + "/"
+			importDir := path.Join(baseImportDir, dir)
+			if !strings.HasSuffix(importDir, "/") {
+				importDir = path.Join(baseImportDir, dir) + "/"
+			}
 			importDirs = append(importDirs, importDir)
 			fullDirs = append(fullDirs, path.Join(srcPrefix, importDir))
 		}
