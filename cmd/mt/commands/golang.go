@@ -197,6 +197,7 @@ func CreatePackageAlias(importDir, fullDir string, files []os.FileInfo) (Package
 func getDefinitionBlocks(lines []string, indicatorWord string) (names []string) {
 
 	withinBlock := false // within a "var (" or "const (" or "type (" block
+	withinItoa := false  // within an itoa section
 
 	escNext := false
 	for _, line := range lines {
@@ -214,6 +215,7 @@ func getDefinitionBlocks(lines []string, indicatorWord string) (names []string) 
 			continue
 		case strings.HasPrefix(line, ")") && withinBlock == true:
 			withinBlock = false
+			withinItoa = false
 			continue
 
 		case withinBlock:
@@ -221,13 +223,20 @@ func getDefinitionBlocks(lines []string, indicatorWord string) (names []string) 
 			switch {
 			case strings.HasPrefix(line, "\t\t"): // more then two tabs means is a part of another structure
 				continue
-			case len(sep) < 2:
+			case len(sep) == 0:
+				withinItoa = false
+			case len(sep) < 2 && !withinItoa:
 				continue
 			case !firstCharIsUpperLetter(sep[0]):
 				continue
 			default:
-				leftOfEq := strings.Split(line, "=")
-				lcns := strings.Split(leftOfEq[0], ",")
+				eqSplit := strings.Split(line, "=")
+				if len(eqSplit) >= 2 {
+					if strings.TrimSpace(eqSplit[1]) == "iota" {
+						withinItoa = true
+					}
+				}
+				lcns := strings.Split(eqSplit[0], ",")
 				for _, lcn := range lcns {
 					lcnT := strings.TrimSpace(lcn)
 					if fields := strings.Fields(lcn); len(fields) == 0 {
@@ -251,8 +260,8 @@ func getDefinitionBlocks(lines []string, indicatorWord string) (names []string) 
 				continue
 			default:
 				afterIndicator := strings.TrimPrefix(line, indicatorWord+" ")
-				leftOfEq := strings.Split(afterIndicator, "=")
-				lcns := strings.Split(leftOfEq[0], ",")
+				eqSplit := strings.Split(afterIndicator, "=")
+				lcns := strings.Split(eqSplit[0], ",")
 				for _, lcn := range lcns {
 					lcnT := strings.TrimSpace(lcn)
 					if fields := strings.Fields(lcnT); len(fields) == 0 {
