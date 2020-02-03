@@ -2,12 +2,27 @@ package commands
 
 import (
 	"fmt"
-	"math"
+	"image"
+	"log"
 	"math/rand"
+	"os"
 	"sort"
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/rigelrozanski/common/colour"
+)
+
+const (
+	caliSetStartX  = 100 // calibration set-x start
+	caliSetEndX    = 120 // calibration set-x end
+	caliSearchMinY = 5   // calibration search y start
+	thick          = 30  // pixels down and across to check for calibration and parsing
+
+	// Allowable variance per R,G,or B, up or down from the
+	// calibration variance to be considered that colour
+	variance = 20 * 257
 )
 
 // Lock2yamlCmd represents the lock2yaml command
@@ -16,6 +31,7 @@ var (
 		Use:   "colour",
 		Short: "determine subtractive colour mixing",
 		RunE:  colourCmd,
+		Args:  cobra.ExactArgs(1),
 	}
 )
 
@@ -25,22 +41,32 @@ func init() {
 	)
 }
 
-type RGB struct {
-	R float64
-	G float64
-	B float64
-}
-
 func colourCmd(cmd *cobra.Command, args []string) error {
 
-	inputs := []RGB{
-		{10, 11, 230},
-		{23, 222, 50},
-		{240, 30, 30},
-		{0, 0, 0},
-		{256, 256, 256},
+	scanPath := args[0]
+
+	file, err := os.Open(scanPath)
+	if err != nil {
+		log.Fatal("Error: Image could not be decoded")
 	}
-	goal := RGB{123, 123, 123}
+	defer file.Close()
+
+	img, _, err := image.Decode(file)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	bounds := img.Bounds()
+
+	scans, err := getCalibrationColours(caliSetStartX, caliSetEndX, caliSearchMinY, bounds.Max.Y, thick, variance, img)
+	if err != nil {
+		return err
+	}
+
+	goal := scans[0]
+	inputs := scans[1:]
+
+	goal.PrintColour("")
 	fmt.Printf("goal colour %v\n", goal)
 
 	accRes := AccumulateRandResults(42, 5*time.Second, inputs, goal)
@@ -56,7 +82,9 @@ func colourCmd(cmd *cobra.Command, args []string) error {
 	i := 0
 	for _, key := range keys {
 		proportion := accRes[key]
-		fmt.Printf("fit: %v\ncolour: %v\nproportions: %v\n\n", key, calcMixedColour(inputs, proportion), proportion)
+		col := colour.CalcMixedColour(inputs, proportion)
+		col.PrintColour("")
+		fmt.Printf("fit: %v\ncolour: %v\nproportions: %v\n\n", key, col, proportion)
 
 		i++
 		if i > 5 {
@@ -66,25 +94,42 @@ func colourCmd(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// map[inputNo]proportions
-type InputProportions []float64
+func getCalibrationColours(caliSetStartX, caliSetEndX, caliSearchMinY, caliSearchMaxY, thick int, variance uint32, img image.Image,
+) (scannedColours []colour.FRGB, err error) {
 
-//
-func AccumulateRandResults(randSource int64, runDur time.Duration, inputs []RGB, goal RGB) (fits map[float64]InputProportions) {
+	col, outsideY, err := colour.GetCalibrationColour(caliSetStartX, caliSetEndX, caliSearchMinY, caliSearchMaxY, thick, variance, img)
+	if err != nil {
+		return scannedColours, err
+	}
+	scannedColours = append(scannedColours, col.ToFRGB())
 
-	fits = make(map[float64]InputProportions)
+	for {
+		col, outsideY, err = colour.GetCalibrationColour(caliSetStartX, caliSetEndX, outsideY, caliSearchMaxY, thick, variance, img)
+		if err != nil { // no more colours to scan
+			break
+		}
+		scannedColours = append(scannedColours, col.ToFRGB())
+	}
+
+	return scannedColours, nil
+}
+
+// Get a bunch of random results
+func AccumulateRandResults(randSource int64, runDur time.Duration, inputs []colour.FRGB, goal colour.FRGB) (fits map[float64]colour.InputProportions) {
+
+	fits = make(map[float64]colour.InputProportions)
 	inputLen := len(inputs)
 	rd := rand.New(rand.NewSource(randSource))
 
 	timeStart := time.Now()
 	for {
 
-		var proportion InputProportions
+		var proportion colour.InputProportions
 		for j := 0; j < inputLen; j++ {
 			proportion = append(proportion, rd.Float64())
 		}
 
-		fit := calcFit(inputs, proportion, goal)
+		fit := colour.CalcFit(inputs, proportion, goal)
 		fits[fit] = proportion
 
 		if time.Since(timeStart) > runDur {
@@ -93,32 +138,4 @@ func AccumulateRandResults(randSource int64, runDur time.Duration, inputs []RGB,
 	}
 
 	return fits
-}
-
-func calcFit(inputs []RGB, proportion InputProportions, goal RGB) float64 {
-	mixed := calcMixedColour(inputs, proportion)
-	return math.Abs(mixed.R-goal.R) +
-		math.Abs(mixed.G-goal.G) +
-		math.Abs(mixed.B-goal.B)
-}
-
-// subtractive colour model get the resulting colour
-func calcMixedColour(inputs []RGB, proportion InputProportions) (mixed RGB) {
-
-	inputLen := len(inputs)
-	var totalsR, totalsG, totalsB, totalAmt float64
-
-	for i := 0; i < inputLen; i++ {
-		totalAmt += proportion[i]
-		totalsR += float64(inputs[i].R) * proportion[i]
-		totalsG += float64(inputs[i].G) * proportion[i]
-		totalsB += float64(inputs[i].B) * proportion[i]
-	}
-
-	mixed = RGB{
-		totalsR / totalAmt,
-		totalsG / totalAmt,
-		totalsB / totalAmt,
-	}
-	return mixed
 }
