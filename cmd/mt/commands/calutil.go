@@ -131,7 +131,16 @@ func DailyActivitiesCmd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	return nil
+	// print the file
+	command1 := fmt.Sprintf("lp -o landscape temp.pdf")
+	output1, err := cmn.Execute(command1)
+	fmt.Printf("%v\n%v\n", command1, output1)
+	if err != nil {
+		return err
+	}
+
+	// remove the temp file
+	return os.Remove("temp.pdf")
 }
 
 func RipDaysCmd(cmd *cobra.Command, args []string) error {
