@@ -7,18 +7,21 @@ import (
 	"math/rand"
 	"os"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/rigelrozanski/common/colour"
+	"github.com/rigelrozanski/thranch/quac"
 )
 
 const (
-	caliSetStartX  = 100 // calibration set-x start
-	caliSetEndX    = 120 // calibration set-x end
-	caliSearchMinY = 5   // calibration search y start
-	thick          = 30  // pixels down and across to check for calibration and parsing
+	caliSetStartX      = 100 // calibration set-x start
+	caliSetEndX        = 120 // calibration set-x end
+	caliSearchMinY     = 5   // calibration search y start
+	thick              = 30  // pixels down and across to check for calibration and parsing
+	acrylicPaintGperMl = 1.2
 
 	// Allowable variance per R,G,or B, up or down from the
 	// calibration variance to be considered that colour
@@ -28,10 +31,10 @@ const (
 // Lock2yamlCmd represents the lock2yaml command
 var (
 	ColourCmd = &cobra.Command{
-		Use:   "colour",
-		Short: "determine subtractive colour mixing",
-		RunE:  colourCmd,
-		Args:  cobra.ExactArgs(1),
+		Use:   "colour <filepath-to-image> [run-durations-seconds] [final-mix-volume-ml]",
+		Short: "determine subtractive colour mixing, provided image must be completely the desired colour",
+		RunE:  mixColourCmd,
+		Args:  cobra.MaximumNArgs(3),
 	}
 )
 
@@ -41,35 +44,60 @@ func init() {
 	)
 }
 
-func colourCmd(cmd *cobra.Command, args []string) error {
-
-	scanPath := args[0]
-
-	file, err := os.Open(scanPath)
+func getAvgColourFromFile(filpath string) colour.FRGB {
+	file, err := os.Open(filpath)
 	if err != nil {
 		log.Fatal("Error: Image could not be decoded")
 	}
 	defer file.Close()
-
 	img, _, err := image.Decode(file)
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	bounds := img.Bounds()
+	return colour.LoadColours(0, bounds.Max.X, 0, bounds.Max.Y, img).AvgColour().ToFRGB()
+}
 
-	scans, err := getCalibrationColours(caliSetStartX, caliSetEndX, caliSearchMinY, bounds.Max.Y, thick, variance, img)
-	if err != nil {
-		return err
+func mixColourCmd(cmd *cobra.Command, args []string) error {
+
+	goal := getAvgColourFromFile(args[0])
+
+	runduration := 5
+	mixMl := float64(50)
+
+	if len(args) >= 2 {
+		var err error
+		runduration, err = strconv.Atoi(args[1])
+		if err != nil {
+			return err
+		}
+	}
+	if len(args) >= 3 {
+		ml, err := strconv.Atoi(args[2])
+		if err != nil {
+			return err
+		}
+		mixMl = float64(ml)
 	}
 
-	goal := scans[0]
-	inputs := scans[1:]
+	var inputNames []string
+	var inputs []colour.FRGB
+	quac.Initialize(os.ExpandEnv("$HOME/.thranch_config"))
+	imagesIdeas := quac.GetImagesByTag([]string{"paints"})
+	for i, idea := range imagesIdeas {
+		input := getAvgColourFromFile(idea.Path())
+		inputs = append(inputs, input)
+
+		input.PrintColour("")
+		colourName, _ := idea.GetTaggedValue("colour")
+		inputNames = append(inputNames, colourName)
+		fmt.Printf("input No %v, name: %v\n", i, colourName)
+	}
 
 	goal.PrintColour("")
 	fmt.Printf("goal colour %v\n", goal)
 
-	accRes := AccumulateRandResults(42, 5*time.Second, inputs, goal)
+	accRes := AccumulateRandResults(42, time.Duration(runduration)*time.Second, inputs, goal)
 
 	// sort by keys
 	keys := make([]float64, 0, len(accRes))
@@ -78,16 +106,30 @@ func colourCmd(cmd *cobra.Command, args []string) error {
 	}
 	sort.Float64s(keys)
 
-	// display top 5 results
+	// display top results
 	i := 0
 	for _, key := range keys {
+		var cumulative, totalPortion float64
 		proportion := accRes[key]
 		col := colour.CalcMixedColour(inputs, proportion)
 		col.PrintColour("")
-		fmt.Printf("fit: %v\ncolour: %v\nproportions: %v\n\n", key, col, proportion)
+		fmt.Printf("fit: %.2f\ncolour: %.0f\n proportions for %vml mixed paint:", key/257, col, mixMl)
+
+		// calculate the totalPortion
+		for j := 0; j < len(proportion); j++ {
+			totalPortion += proportion[j]
+		}
+		totalGrams := mixMl * acrylicPaintGperMl
+		gramPerPortion := totalGrams / totalPortion
+
+		for j := 0; j < len(proportion); j++ {
+			cumulative += proportion[j] * gramPerPortion
+			fmt.Printf("\n\t%v:   \t%.2fg \t%.2f g", inputNames[j], proportion[j]*gramPerPortion, cumulative)
+		}
+		fmt.Println("")
 
 		i++
-		if i > 5 {
+		if i > 2 {
 			break
 		}
 	}

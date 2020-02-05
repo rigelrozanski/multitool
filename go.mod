@@ -9,7 +9,7 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/pdfcpu/pdfcpu v0.2.6-0.20191115001021-1e3294bc5ab2
 	github.com/rigelrozanski/common v0.0.0-20200204033706-d44f43da9cbb
-	github.com/rigelrozanski/thranch v0.0.0-20200204115042-6ec305409672
+	github.com/rigelrozanski/thranch v0.0.0-20200205000854-5ce3bbe6c252
 	github.com/rigelrozanski/wb v0.0.0-20190430015828-95a7304b685b
 	github.com/spf13/cobra v0.0.5
 	github.com/spf13/pflag v1.0.5
