@@ -17,6 +17,7 @@ require (
 	golang.org/x/net v0.0.0-20200202094626-16171245cfb2
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
 	google.golang.org/api v0.15.0
+	gopkg.in/gographics/imagick.v2 v2.6.0
 )
 
 //replace github.com/rigelrozanski/thranch => /Users/rigelrozanski/go/src/github.com/rigelrozanski/thranch
