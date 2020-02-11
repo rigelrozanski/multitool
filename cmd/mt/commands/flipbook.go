@@ -86,6 +86,7 @@ func FlipBookCmd(cmd *cobra.Command, args []string) error {
 		if f.IsDir() {
 			continue
 		}
+		fmt.Printf("debug name: %v\n", name)
 		imgPaths = append(imgPaths, path.Join(dir, name))
 	}
 
@@ -132,19 +133,9 @@ func FlipBookCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	// delete the working folder
-	os.RemoveAll(dir)
+	//os.RemoveAll(dir)
 
 	return nil
-	//// print the file
-	//command1 := fmt.Sprintf("lp temp.pdf")
-	//output1, err := cmn.Execute(command1)
-	//fmt.Printf("%v\n%v\n", command1, output1)
-	//if err != nil {
-	//return err
-	//}
-
-	//// remove the temp file
-	//return os.Remove("temp.pdf")
 }
 
 // write cut marks
@@ -195,7 +186,7 @@ func SplitAnimatedGIF(reader io.Reader, writePath string) (imgWidth, imgHeight i
 		draw.Draw(overpaintImage, overpaintImage.Bounds(), srcImg, image.ZP, draw.Over)
 
 		// save current frame "stack". This will overwrite an existing file with that name
-		file, err := os.Create(path.Join(writePath, strconv.Itoa(i)+".png"))
+		file, err := os.Create(path.Join(writePath, fmt.Sprintf("%06d", i)+".png"))
 		if err != nil {
 			return 0, 0, err
 		}
