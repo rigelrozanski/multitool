@@ -43,7 +43,15 @@ var (
 	}
 )
 
+var (
+	xMargin = 0.3
+	yMargin = 0.3
+)
+
 func init() {
+	AltBookPDFCmd.PersistentFlags().Float64Var(&xMargin, "xmar", 0.3, "define the x-margin (in inches)")
+	AltBookPDFCmd.PersistentFlags().Float64Var(&yMargin, "ymar", 0.3, "define the y-margin (in inches)")
+
 	PDFCmd.AddCommand(
 		DoublePDFCmd,
 		BookPDFCmd,
@@ -212,15 +220,20 @@ func altBookCmd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// process a whole sheet front and back at once
-	yMargin := float64(0.3)
-	scaledWidth := (8.5 - 2*yMargin) * float64(im.Width) / float64(im.Height)
-	xPositionLeft := (float64(11)/2.0 - scaledWidth) / 2
-	xPositionRight := float64(11)/2.0 + xPositionLeft
+	// determine positions and scales
+	w, h := 0.0, 8.5-2*yMargin // zero means autoscale here
+	yPosition := yMargin
+	scaledWidth := h * float64(im.Width) / float64(im.Height)
+	xPositionLeft := (11.0/2.0 - scaledWidth) / 2
 	if xPositionLeft < 0 {
-		panic("bad borders")
+		xPositionLeft = xMargin
+		w, h = 11.0/2-2*xMargin, 0.0 // zero means autoscale here
+		scaledHeight := w * float64(im.Height) / float64(im.Width)
+		yPosition = (8.5 - scaledHeight) / 2
 	}
+	xPositionRight := 11.0/2.0 + xPositionLeft
 
+	// process a whole sheet front and back at once
 	imgIndex := 0
 	for i := 0; i < pdfPages; i += 2 {
 
@@ -231,7 +244,7 @@ func altBookCmd(cmd *cobra.Command, args []string) error {
 		}
 		imgPath := imgPaths[imgIndex]
 		if imgPath != "" {
-			pdf.ImageOptions(imgPath, xPositionLeft, yMargin, 0, 8.5-2*yMargin, false, opt, 0, "")
+			pdf.ImageOptions(imgPath, xPositionLeft, yPosition, w, h, false, opt, 0, "")
 		}
 		imgIndex++
 
@@ -242,7 +255,7 @@ func altBookCmd(cmd *cobra.Command, args []string) error {
 		}
 		imgPath = imgPaths[imgIndex]
 		if imgPath != "" {
-			pdf.ImageOptions(imgPath, xPositionRight, yMargin, 0, 8.5-2*yMargin, false, opt, 0, "")
+			pdf.ImageOptions(imgPath, xPositionRight, yPosition, w, h, false, opt, 0, "")
 		}
 		imgIndex++
 	}
@@ -256,7 +269,7 @@ func altBookCmd(cmd *cobra.Command, args []string) error {
 		}
 		imgPath := imgPaths[imgIndex]
 		if imgPath != "" {
-			pdf.ImageOptions(imgPath, xPositionRight, yMargin, 0, 8.5-2*yMargin, false, opt, 0, "")
+			pdf.ImageOptions(imgPath, xPositionRight, yPosition, w, h, false, opt, 0, "")
 		}
 		imgIndex++
 
@@ -267,7 +280,7 @@ func altBookCmd(cmd *cobra.Command, args []string) error {
 		}
 		imgPath = imgPaths[imgIndex]
 		if imgPath != "" {
-			pdf.ImageOptions(imgPath, xPositionLeft, yMargin, 0, 8.5-2*yMargin, false, opt, 0, "")
+			pdf.ImageOptions(imgPath, xPositionLeft, yPosition, w, h, false, opt, 0, "")
 		}
 		imgIndex++
 	}
