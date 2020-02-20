@@ -22,7 +22,7 @@ var lineWidth float64
 func init() {
 	GridpaperCmd.PersistentFlags().Float64VarP(&marginMin, "margin", "m", 0.4, "define the minimum margin (in inches)")
 	GridpaperCmd.PersistentFlags().Float64VarP(&gridSide, "gridSide", "g", 0.2, "define the side-length of a gridcell (in inches)")
-	GridpaperCmd.PersistentFlags().Float64VarP(&lineWidth, "linewidth", "l", 0.001, "define the line width (in inches)")
+	GridpaperCmd.PersistentFlags().Float64VarP(&lineWidth, "linewidth", "l", 0.002, "define the line width (in inches)")
 	RootCmd.AddCommand(GridpaperCmd)
 }
 
