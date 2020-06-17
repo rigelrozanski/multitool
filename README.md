@@ -73,3 +73,48 @@ and
 got dep --vendor github.com/myorg/myrepo
 ```
 
+### Book Binding Commands
+
+The first step once you have your pdf is to separate out the pdf into a folder
+of all the images (one image for each page in the pdf book). To accomplish this
+I use a command line program named "magick" which can be downloaded here:
+(https://imagemagick.org/script/download.php) 
+
+```
+magick convert -density 300 input.pdf -quality 100 -depth 8 -sharpen 0x1.0
+~/Desktop/temp/output-%04d.png
+```
+
+For instance if you were navigated to your Desktop within terminal (cd
+~/Desktop) The above command would convert a file on your desktop that was
+named "input.pdf" into a folder of images within a new folder "temp" on your
+desktop. NOTE this step can take a LONG time to run, like 45min+ depending on
+the size of your book, I think that if you replace "input.pdf" with
+"input.pdf[1-3]" in the above command it will do this task for only 3 pages
+(taking much less time) which will give you a sense if the command is working
+or not.
+
+The next step is to reorder all those images for proper printing and further
+add them all to a single pdf. This is accomplished with my little be piece of
+software. The software will need to get compile from source, here is the link
+to the code and the installation instructions
+
+https://github.com/rigelrozanski/multitool#installation-from-source
+
+Once installed the command you could use from your Desktop within terminal is: 
+
+```
+mt pdf alt-book "temp/"
+```
+
+(optional step) if you want to get fancy and change the margins around a bit to
+maximize the text size on the page you can play with the margins with the
+following flags (change those 0.3 numbers around, they're the margin in inches)
+
+``` 
+mt pdf alt-book "temp/" --xmar 0.3 --ymar 0.3 
+```
+
+This would compile all the images into your desired file... once you have that
+file, it'll be dead easy to print/cut/bind.
+
