@@ -1,5 +1,16 @@
 # Multitool
 
+## Installation From Source
+
+1. make sure you [have Go installed][1] and [put $GOPATH/bin in your $PATH][2]
+2. clone this repository while navigated to $GOPATH/src/github.com/rigelrozanski/ 
+   with `git clone https://github.com/rigelrozanski/multitool.git`
+3. go to the repo directory with `cd $GOPATH/src/github.com/rigelrozanski/multitool`
+4. run `make install`
+
+[1]: https://golang.org/doc/install
+[2]: https://github.com/tendermint/tendermint/wiki/Setting-GOPATH 
+
 ### Slack
 
 Often when attempting to copy and paste text from a slack conversation there is 

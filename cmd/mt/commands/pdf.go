@@ -36,10 +36,12 @@ var (
 		Args:  cobra.ExactArgs(1),
 	}
 	AltBookPDFCmd = &cobra.Command{
-		Use:   "alt-book [pdf-file]",
+		Use:   "alt-book [img-files-dir]",
 		Short: "first half on right, last half on left",
-		RunE:  altBookCmd,
-		Args:  cobra.ExactArgs(1),
+		Long: `The directory must be an alphanumerically ordered 
+image files from the first to last page`,
+		RunE: altBookCmd,
+		Args: cobra.ExactArgs(1),
 	}
 )
 
