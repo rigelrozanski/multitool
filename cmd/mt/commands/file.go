@@ -23,11 +23,22 @@ var (
 		Args:  cobra.ExactArgs(2),
 		RunE:  mirrorCmd,
 	}
+	CombineCmd = &cobra.Command{
+		Use:   "combine [newfilename]",
+		Short: "combines all files in the current directory into one file (concat all text)",
+		Args:  cobra.ExactArgs(1),
+		RunE:  combineCmd,
+	}
+	combineFlagIncludeFileName = false
 )
 
 func init() {
+	CombineCmd.Flags().BoolVarP(&combineFlagIncludeFileName, "incl-filename", "i", false, "Include the filename before all content")
+
 	FileCmd.AddCommand(MirrorCmd)
+	FileCmd.AddCommand(CombineCmd)
 	RootCmd.AddCommand(FileCmd)
+
 }
 
 func mirrorCmd(cmd *cobra.Command, args []string) error {
@@ -72,5 +83,36 @@ func mirrorCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println("completed copy")
+	return nil
+}
+
+func combineCmd(cmd *cobra.Command, args []string) error {
+
+	newFileName := args[0]
+
+	dir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+
+	outLines := []string{}
+	op := func(path string) error {
+
+		// get file contents
+		lines, err := common.ReadLines(path)
+		if err != nil {
+			return nil // continue through the operation
+		}
+
+		if combineFlagIncludeFileName {
+			outLines = append(outLines, path)
+		}
+
+		outLines = append(outLines, lines...)
+		return nil
+	}
+	common.OperateOnDir(dir, op)
+	_ = common.WriteLines(outLines, newFileName)
+	fmt.Println("completed")
 	return nil
 }
