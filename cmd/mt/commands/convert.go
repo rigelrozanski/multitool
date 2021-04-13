@@ -20,12 +20,17 @@ var (
 	}
 )
 
+var decimalPlacesFromFlag int
+
 func init() {
+	ConvertCmd.PersistentFlags().IntVarP(&decimalPlacesFromFlag, "decimals", "d", -1,
+		"number of decimal places (-1 for auto)")
 	RootCmd.AddCommand(ConvertCmd)
 }
 
 var (
 	unitAlias = map[string]string{ // map[aliasUnit]unit
+		"inch":          "in",
 		"sqft":          "ft^2",
 		"ft2":           "ft^2",
 		"sqm":           "m^2",
@@ -53,6 +58,12 @@ var (
 		"ft^2_acre":               "a/43560.04",
 		"hectare_sqft":            "a*107639.1",
 		"ft^2_hectare":            "a/107639.1",
+		"m_ft":                    "a*3.28084",
+		"ft_m":                    "a/3.28084",
+		"ft_in":                   "a*12",
+		"in_ft":                   "a/12",
+		"in_mm":                   "a*25.4",
+		"mm_in":                   "a/25.4",
 		"m^2_ft^2":                "a*10.76390999",
 		"ft^2_m^2":                "a/10.76390999",
 		"ft^2_L":                  "a*28.31685",
@@ -98,6 +109,10 @@ func convertCmd(cmd *cobra.Command, args []string) error {
 	splt := strings.Split(amountStr, ".")
 	if len(splt) == 2 {
 		decimalPlaces = len(splt[1])
+	}
+
+	if decimalPlacesFromFlag != -1 {
+		decimalPlaces = decimalPlacesFromFlag
 	}
 
 	amount, err := strconv.ParseFloat(amountStr, 64)
