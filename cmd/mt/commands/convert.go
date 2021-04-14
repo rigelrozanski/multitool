@@ -30,6 +30,7 @@ func init() {
 
 var (
 	unitAlias = map[string]string{ // map[aliasUnit]unit
+		"Gal":           "gal",
 		"inch":          "in",
 		"sqft":          "ft^2",
 		"ft2":           "ft^2",
@@ -74,6 +75,10 @@ var (
 		"cup_quart":               "a/4",
 		"cup_L":                   "a*0.236587524",
 		"L_cup":                   "a/0.236587524",
+		"gal_L":                   "a*4.54609",
+		"L_gal":                   "a/4.54609",
+		"tablespoon_teaspoon":     "a*3",
+		"teaspoon_tablespoon":     "a/3",
 		"tablespoon_cup":          "a*0.0625",
 		"cup_tablespoon":          "a/0.0625",
 		"teaspoon_cup":            "a*0.02083333156038129",

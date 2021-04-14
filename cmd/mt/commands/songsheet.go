@@ -11,11 +11,10 @@ import (
 )
 
 // TODO
+// - rotation on a group element, to allow for bizzare-rotated columns
 // - prickles ON the lines
 // - blank element
 // - wavey lines
-// - vertical lines
-// - grid element
 // - sun element
 
 var (
@@ -27,7 +26,7 @@ var (
 	horizontal-pillar:   HPILLAR
 	cactus:              CACTUS
 	horizontal-cactus:   HCACTUS
-	lines:               LINES[spacing,angle-rad]    examples: LINES; LINES[0.5]; LINES[0.5,pi/10]
+	lines:               LINES[spacing,angle-rad]    examples: LINES; LINES[0.5]; LINES[0.5,0.1]
 	group row:           ROW(elems..)
 	group column:        COL(elems..)
 
@@ -76,7 +75,7 @@ func songsheetCmd(cmd *cobra.Command, args []string) error {
 
 	_ = elem.printPDF(pdf, bnd)
 
-	return pdf.OutputFileAndClose("songsheet.pdf")
+	return pdf.OutputFileAndClose(fmt.Sprintf("songsheet_%v.pdf", args[0]))
 }
 
 // --------------------------------
@@ -142,7 +141,7 @@ func printHeader(pdf *gofpdf.Fpdf, bnd bounds) (reducedBounds bounds) {
 
 	// print date
 	pdf.SetFont("courier", "", 14)
-	pdf.Text(bnd.right-dateRightOffset, bnd.top, "DATE:")
+	pdf.Text(bnd.right-dateRightOffset, bnd.top+padding, "DATE:")
 
 	// print box
 	pdf.SetLineWidth(thinLW)
@@ -173,7 +172,7 @@ type ssElement interface {
 // ----------------------------------------
 
 type groupElem struct {
-	isRow bool // otherwise is col
+	kind  string // "row", "col", or "combo"
 	elems []ssElement
 }
 
@@ -185,11 +184,14 @@ func (ge groupElem) parseText(text string) (ssElement, error) {
 	}
 	newGE := groupElem{}
 	if strings.HasPrefix(text, "ROW(") {
-		newGE.isRow = true
+		newGE.kind = "row"
 		text = strings.TrimPrefix(text, "ROW(")
 	} else if strings.HasPrefix(text, "COL(") {
 		text = strings.TrimPrefix(text, "COL(")
-		newGE.isRow = false
+		newGE.kind = "col"
+	} else if strings.HasPrefix(text, "COMBO(") {
+		text = strings.TrimPrefix(text, "COMBO(")
+		newGE.kind = "combo"
 	} else {
 		return nil, nil
 	}
@@ -233,6 +235,10 @@ func (ge groupElem) parseText(text string) (ssElement, error) {
 }
 
 func (ge groupElem) getWidth() (isStatic bool, width float64) {
+	if ge.kind == "combo" {
+		return false, 0
+	}
+
 	total := 0.0
 	for _, elem := range ge.elems {
 		isStatic, elemWidth := elem.getWidth()
@@ -245,6 +251,10 @@ func (ge groupElem) getWidth() (isStatic bool, width float64) {
 }
 
 func (ge groupElem) getHeight() (isStatic bool, height float64) {
+	if ge.kind == "combo" {
+		return false, 0
+	}
+
 	total := 0.0
 	for _, elem := range ge.elems {
 		isStatic, elemHeight := elem.getHeight()
@@ -257,20 +267,31 @@ func (ge groupElem) getHeight() (isStatic bool, height float64) {
 }
 
 func (ge groupElem) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reducedBounds bounds) {
+
+	if ge.kind == "combo" {
+		for _, elem := range ge.elems {
+			_ = elem.printPDF(pdf, bnd)
+		}
+
+		// uses entire bounds
+		return bounds{bnd.bottom, bnd.left, bnd.bottom, bnd.left}
+	}
+
 	nonStaticWidth := bnd.Width()
 	nonStaticHeight := bnd.Height()
 	nonStaticWidthElems := 0
 	nonStaticHeightElems := 0
 
 	for _, elem := range ge.elems {
-		if ge.isRow {
+		switch ge.kind {
+		case "row":
 			isStaticW, elemWidth := elem.getWidth()
 			if isStaticW {
 				nonStaticWidth -= elemWidth
 			} else {
 				nonStaticWidthElems++
 			}
-		} else {
+		case "col":
 			isStaticH, elemHeight := elem.getHeight()
 			if isStaticH {
 				nonStaticHeight -= elemHeight
@@ -292,10 +313,11 @@ func (ge groupElem) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reducedBounds bounds
 		if isStaticW {
 			newBounds.left += elemWidth
 		} else {
-			if ge.isRow {
+			switch ge.kind {
+			case "row":
 				bnd.right = bnd.left + nonStaticWidthPerElem
 				newBounds.left += nonStaticWidthPerElem
-			} else {
+			case "col":
 				// just use all the width
 				bnd.right = bnd.left + nonStaticWidth
 			}
@@ -305,10 +327,11 @@ func (ge groupElem) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reducedBounds bounds
 		if isStaticH {
 			newBounds.top += elemHeight
 		} else {
-			if ge.isRow {
+			switch ge.kind {
+			case "row":
 				// just use all the height
 				bnd.bottom = bnd.top + nonStaticHeight
-			} else {
+			case "col":
 				bnd.bottom = bnd.top + nonStaticHeightPerElem
 				newBounds.top += nonStaticHeightPerElem
 			}
@@ -482,66 +505,100 @@ func (pil pillar) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reducedBounds bounds) 
 // ---------------------
 
 type flowLines struct {
-	//isHorizontal bool
-	spacing  float64
-	angleRad float64 // in radians
+	isHorizontal bool
+	spacing      float64
+	angleRad     float64 // in radians
 }
 
 var _ ssElement = flowLines{}
 
 func (fl flowLines) parseText(text string) (elem ssElement, err error) {
-	if !strings.HasPrefix(text, "LINES") {
+	flOut := flowLines{}
+	if strings.HasPrefix(text, "LINES") {
+		text = strings.TrimPrefix(text, "LINES")
+		flOut = flowLines{true, 2 * padding, 0}
+	} else if strings.HasPrefix(text, "HLINES") {
+		text = strings.TrimPrefix(text, "HLINES")
+		flOut = flowLines{false, 2 * padding, math.Pi / 2}
+	} else {
 		return nil, nil
 	}
-	trim := strings.TrimPrefix(text, "LINES")
-	spacing := 0.5
-	angle := 0.0
-	if len(trim) == 0 {
-		return flowLines{spacing, angle}, nil
+
+	if len(text) == 0 {
+		return flOut, nil
 	}
-	trim = strings.TrimPrefix(trim, "[")
-	trim = strings.TrimSuffix(trim, "]")
-	split := strings.Split(trim, ",")
+	text = strings.TrimPrefix(text, "[")
+	text = strings.TrimSuffix(text, "]")
+	split := strings.Split(text, ",")
 
 	switch len(split) {
 	case 1:
-		spacing, err = strconv.ParseFloat(split[0], 64)
+		flOut.spacing, err = strconv.ParseFloat(split[0], 64)
 		if err != nil {
 			return nil, err
 		}
 	case 2:
 
-		spacing, err = strconv.ParseFloat(split[0], 64)
+		flOut.spacing, err = strconv.ParseFloat(split[0], 64)
 		if err != nil {
 			return nil, err
 		}
-		angle, err = strconv.ParseFloat(split[1], 64)
+		flOut.angleRad, err = strconv.ParseFloat(split[1], 64)
 		if err != nil {
 			return nil, err
 		}
 	default:
 		return nil, fmt.Errorf("bad input for %v", text)
 	}
-	return flowLines{spacing, angle}, nil
+	return flOut, nil
 }
 
 func (fl flowLines) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reducedBounds bounds) {
 
 	pdf.SetLineWidth(thinestLW)
 
-	yOverallStart := bnd.top + fl.spacing
-	yOverallEnd := bnd.bottom - padding
-	for yStart := yOverallStart; yStart < yOverallEnd; yStart += fl.spacing {
+	if fl.isHorizontal {
+		yOverallStart := bnd.top + padding/2 // NOTE this is an exception to the padding pattern
+		yOverallEnd := bnd.bottom - padding
 		xStart := bnd.left
-		xEnd := bnd.right - padding
-		width := xEnd - xStart
+		for yStart := yOverallStart; yStart < yOverallEnd; yStart += fl.spacing {
+			xEnd := bnd.right - padding
+			width := xEnd - xStart
 
-		// tan = height/width
-		// tan = (yend-ystart)/width
-		// yend = width*tan+ystart
-		yEnd := math.Tan(fl.angleRad)*width + yStart
+			// tan = height/width
+			// tan = (yend-ystart)/width
+			// yend = width*tan+ystart
+			yEnd := math.Tan(fl.angleRad)*width + yStart
+			if yEnd > yOverallEnd {
+				yEnd = yOverallEnd
+				// work backwards
+				width = (yEnd - yStart) / math.Tan(fl.angleRad)
+				xEnd = xStart + width
+			}
 
-		pdf.Line(xStart, yStart, xEnd, yEnd)
+			pdf.Line(xStart, yStart, xEnd, yEnd)
+		}
+	} else {
+		xOverallStart := bnd.left
+		xOverallEnd := bnd.right - padding
+		yStart := bnd.top + padding/2 // NOTE this is an exception to the padding pattern
+		for xStart := xOverallStart; xStart < xOverallEnd; xStart += fl.spacing {
+			yEnd := bnd.bottom - padding
+			height := yEnd - yStart
+
+			// tan = height/width
+			// tan = height/(xend-xstart)
+			// xend = height/tan +xstart
+			xEnd := height/math.Tan(fl.angleRad) + xStart
+			if xEnd > xOverallEnd {
+				xEnd = xOverallEnd
+				// work backwards
+				height = (xEnd - xStart) * math.Tan(fl.angleRad)
+				yEnd = yStart + height
+			}
+
+			pdf.Line(xStart, yStart, xEnd, yEnd)
+		}
 	}
 
 	// uses entire bounds
