@@ -31,6 +31,7 @@ func init() {
 var (
 	unitAlias = map[string]string{ // map[aliasUnit]unit
 		"Gal":           "gal",
+		"l":             "L",
 		"inch":          "in",
 		"sqft":          "ft^2",
 		"ft2":           "ft^2",
@@ -96,6 +97,78 @@ var (
 	}
 )
 
+func getAllConversionsFrom(from string) (tos map[string]struct{}) {
+	tos = make(map[string]struct{})
+	for i, _ := range cvs {
+		split := strings.SplitN(i, "_", 2)
+		if len(split) != 2 {
+			panic(fmt.Sprintf("bad split: %v; %v", split, i))
+		}
+		fromSplit, toSplit := split[0], split[1]
+		if fromSplit == from {
+			tos[toSplit] = struct{}{}
+		}
+	}
+	return tos
+}
+
+func getAllConversionsTo(to string) (froms map[string]struct{}) {
+	froms = make(map[string]struct{})
+	for i, _ := range cvs {
+		split := strings.SplitN(i, "_", 2)
+		if len(split) != 2 {
+			panic(fmt.Sprintf("bad split: %v; %v", split, i))
+		}
+		fromSplit, toSplit := split[0], split[1]
+		if toSplit == to {
+			froms[fromSplit] = struct{}{}
+		}
+	}
+	return froms
+}
+
+func getConversionExpression(from, to, of string) (exprStr string, err error) {
+
+	lookup := from + "_" + to
+	if of != "" {
+		lookup += "_" + of
+	}
+	convExpr, found := cvs[lookup]
+	if !found && of == "" {
+
+		// look for an intermediary
+		froms := getAllConversionsTo(to)
+		tos := getAllConversionsFrom(from)
+
+		commonUnit := ""
+		for fromCom, _ := range froms {
+			_, foundT := tos[fromCom]
+			if foundT {
+				commonUnit = fromCom
+				break
+			}
+		}
+
+		lookupCommon1 := from + "_" + commonUnit
+		lookupCommon2 := commonUnit + "_" + to
+		convExprCommon1, found1 := cvs[lookupCommon1]
+		if !found1 {
+			panic("how could it be! 1")
+		}
+		convExprCommon2, found2 := cvs[lookupCommon2]
+		if !found2 {
+			panic("how could it be! 2")
+		}
+		convExpr = strings.Replace(convExprCommon2, "a", convExprCommon1, 1)
+		return convExpr, nil
+	}
+	// if still not found error out
+	if !found {
+		return "", errors.New("unknown conversion")
+	}
+	return convExpr, nil
+}
+
 func convertCmd(cmd *cobra.Command, args []string) error {
 
 	amountStr, unitFrom, toArg, unitTo := args[0], args[1], args[2], args[3]
@@ -120,10 +193,13 @@ func convertCmd(cmd *cobra.Command, args []string) error {
 		decimalPlaces = decimalPlacesFromFlag
 	}
 
-	amount, err := strconv.ParseFloat(amountStr, 64)
+	// the input amount can be an expression itself
+	amountExpr, err := govaluate.NewEvaluableExpression(amountStr)
 	if err != nil {
 		return err
 	}
+	amountI, err := amountExpr.Evaluate(nil)
+	amount := amountI.(float64)
 
 	uf, ok := unitAlias[unitFrom]
 	if ok {
@@ -135,13 +211,9 @@ func convertCmd(cmd *cobra.Command, args []string) error {
 		unitTo = ut
 	}
 
-	lookup := unitFrom + "_" + unitTo
-	if material != "" {
-		lookup += "_" + material
-	}
-	convExpr, found := cvs[lookup]
-	if !found {
-		return errors.New("unknown conversion")
+	convExpr, err := getConversionExpression(unitFrom, unitTo, material)
+	if err != nil {
+		return err
 	}
 
 	if strings.HasPrefix(convExpr, "RANGE") {
