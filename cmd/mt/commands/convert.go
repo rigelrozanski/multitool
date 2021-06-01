@@ -31,6 +31,7 @@ func init() {
 var (
 	unitAlias = map[string]string{ // map[aliasUnit]unit
 		"Gal":           "gal",
+		"ml":            "mL",
 		"l":             "L",
 		"inch":          "in",
 		"sqft":          "ft^2",
@@ -61,6 +62,8 @@ var (
 		"hectare_sqft":            "a*107639.1",
 		"ft^2_hectare":            "a/107639.1",
 		"m_ft":                    "a*3.28084",
+		"m_mm":                    "a*1000",
+		"mm_m":                    "a/1000",
 		"ft_m":                    "a/3.28084",
 		"ft_in":                   "a*12",
 		"in_ft":                   "a/12",
@@ -78,6 +81,8 @@ var (
 		"L_cup":                   "a/0.236587524",
 		"gal_L":                   "a*4.54609",
 		"L_gal":                   "a/4.54609",
+		"L_mL":                    "a*1000",
+		"mL_L":                    "a/1000",
 		"tablespoon_teaspoon":     "a*3",
 		"teaspoon_tablespoon":     "a/3",
 		"tablespoon_cup":          "a*0.0625",
@@ -148,16 +153,19 @@ func getConversionExpression(from, to, of string) (exprStr string, err error) {
 				break
 			}
 		}
+		if commonUnit == "" {
+			return "", errors.New("unknown conversion")
+		}
 
 		lookupCommon1 := from + "_" + commonUnit
 		lookupCommon2 := commonUnit + "_" + to
 		convExprCommon1, found1 := cvs[lookupCommon1]
 		if !found1 {
-			panic("how could it be! 1")
+			panic(fmt.Sprintf("couldn't lookup %v", lookupCommon1))
 		}
 		convExprCommon2, found2 := cvs[lookupCommon2]
 		if !found2 {
-			panic("how could it be! 2")
+			panic(fmt.Sprintf("couldn't lookup %v", lookupCommon2))
 		}
 		convExpr = strings.Replace(convExprCommon2, "a", convExprCommon1, 1)
 		return convExpr, nil

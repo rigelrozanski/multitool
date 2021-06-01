@@ -26,7 +26,10 @@ var (
 	horizontal-pillar:   HPILLAR
 	cactus:              CACTUS
 	horizontal-cactus:   HCACTUS
-	lines:               LINES[spacing,angle-rad]    examples: LINES; LINES[0.5]; LINES[0.5,0.1]
+	lines:               LINES[spacing,angle-rad]    ex.: LINES; LINES[0.5]; LINES[0.5,0.1]
+	vertical-lines:      VLINES[spacing,angle-rad]
+	vertical-grid:       VGRID[spacing,size]  
+	horizontal-grid:     HGRID[spacing,size]  
 	group row:           ROW(elems..)
 	group column:        COL(elems..)
 
@@ -86,6 +89,7 @@ func parseElem(text string) (elem ssElement, err error) {
 	elemKinds := []ssElement{
 		pillar{},
 		flowLines{},
+		grid{},
 		groupElem{},
 	}
 
@@ -504,10 +508,109 @@ func (pil pillar) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reducedBounds bounds) 
 
 // ---------------------
 
+type grid struct {
+	isHorizontal bool
+	spacing      float64
+	size         float64
+}
+
+var _ ssElement = grid{}
+
+func (g grid) parseText(text string) (elem ssElement, err error) {
+
+	flOut := grid{}
+	if strings.HasPrefix(text, "VGRID") {
+		text = strings.TrimPrefix(text, "VGRID")
+		flOut = grid{false, padding, 0}
+	} else if strings.HasPrefix(text, "HGRID") {
+		text = strings.TrimPrefix(text, "HGRID")
+		flOut = grid{true, padding, 0}
+	} else {
+		return nil, nil
+	}
+
+	if len(text) == 0 {
+		return flOut, nil
+	}
+	text = strings.TrimPrefix(text, "[")
+	text = strings.TrimSuffix(text, "]")
+	split := strings.Split(text, ",")
+
+	switch len(split) {
+	case 1:
+		flOut.spacing, err = strconv.ParseFloat(split[0], 64)
+		if err != nil {
+			return nil, err
+		}
+	case 2:
+
+		flOut.spacing, err = strconv.ParseFloat(split[0], 64)
+		if err != nil {
+			return nil, err
+		}
+		flOut.size, err = strconv.ParseFloat(split[1], 64)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("bad input for %v", text)
+	}
+	return flOut, nil
+}
+
+func (g grid) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reducedBounds bounds) {
+
+	var usedBnd bounds
+	if g.isHorizontal {
+		usedBnd = bounds{bnd.top, bnd.left, bnd.top + g.size, bnd.right}
+	} else {
+		usedBnd = bounds{bnd.top, bnd.left, bnd.bottom, bnd.left + g.size}
+	}
+
+	NewFlowLines(true, g.spacing, 0, 0, 0).printPDF(pdf, usedBnd)
+	NewFlowLines(false, g.spacing, math.Pi/2, 0, 0).printPDF(pdf, usedBnd)
+
+	if g.isHorizontal {
+		return bounds{bnd.top + g.size, bnd.left, bnd.bottom, bnd.right}
+	} else {
+		return bounds{bnd.top, bnd.left + g.size, bnd.bottom, bnd.right}
+	}
+}
+
+func (g grid) getWidth() (isStatic bool, width float64) {
+	if g.isHorizontal {
+		return false, 0
+	}
+	return true, g.size
+}
+
+func (g grid) getHeight() (isStatic bool, height float64) {
+	if !g.isHorizontal {
+		return false, 0
+	}
+	return true, g.size
+}
+
+// ---------------------
+
 type flowLines struct {
 	isHorizontal bool
 	spacing      float64
 	angleRad     float64 // in radians
+	midPoints    int64   // any midpoints labelled with circles
+	ticks        int64   // any midpoints labelled with circles
+}
+
+// NewflowLines creates a new flowLines object
+func NewFlowLines(isHorizontal bool, spacing, angleRad float64,
+	midPoints, ticks int64) flowLines {
+	return flowLines{
+		isHorizontal: isHorizontal,
+		spacing:      spacing,
+		angleRad:     angleRad,
+		midPoints:    midPoints,
+		ticks:        ticks,
+	}
 }
 
 var _ ssElement = flowLines{}
@@ -516,10 +619,10 @@ func (fl flowLines) parseText(text string) (elem ssElement, err error) {
 	flOut := flowLines{}
 	if strings.HasPrefix(text, "LINES") {
 		text = strings.TrimPrefix(text, "LINES")
-		flOut = flowLines{true, 2 * padding, 0}
-	} else if strings.HasPrefix(text, "HLINES") {
-		text = strings.TrimPrefix(text, "HLINES")
-		flOut = flowLines{false, 2 * padding, math.Pi / 2}
+		flOut = NewFlowLines(true, 2*padding, 0, 0, 0)
+	} else if strings.HasPrefix(text, "VLINES") {
+		text = strings.TrimPrefix(text, "VLINES")
+		flOut = NewFlowLines(false, 2*padding, math.Pi/2, 0, 0)
 	} else {
 		return nil, nil
 	}
@@ -547,6 +650,36 @@ func (fl flowLines) parseText(text string) (elem ssElement, err error) {
 		if err != nil {
 			return nil, err
 		}
+	case 3:
+		flOut.spacing, err = strconv.ParseFloat(split[0], 64)
+		if err != nil {
+			return nil, err
+		}
+		flOut.angleRad, err = strconv.ParseFloat(split[1], 64)
+		if err != nil {
+			return nil, err
+		}
+		flOut.midPoints, err = strconv.ParseInt(split[2], 10, 64)
+		if err != nil {
+			return nil, err
+		}
+	case 4:
+		flOut.spacing, err = strconv.ParseFloat(split[0], 64)
+		if err != nil {
+			return nil, err
+		}
+		flOut.angleRad, err = strconv.ParseFloat(split[1], 64)
+		if err != nil {
+			return nil, err
+		}
+		flOut.midPoints, err = strconv.ParseInt(split[2], 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		flOut.ticks, err = strconv.ParseInt(split[3], 10, 64)
+		if err != nil {
+			return nil, err
+		}
 	default:
 		return nil, fmt.Errorf("bad input for %v", text)
 	}
@@ -556,12 +689,19 @@ func (fl flowLines) parseText(text string) (elem ssElement, err error) {
 func (fl flowLines) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reducedBounds bounds) {
 
 	pdf.SetLineWidth(thinestLW)
+	var midPointXOffSet, midPointYOffSet float64 = 0, 0
+	var ticksXOffSet, ticksYOffSet float64 = 0, 0
+	midPointCircleRadius := padding / 10
+	tickLength := fl.spacing / 10
+	tickAngle := fl.angleRad + math.Pi/2 // perpendicular
+	fmt.Printf("debug tickAngle: %v\n", tickAngle)
 
 	if fl.isHorizontal {
 		yOverallStart := bnd.top + padding/2 // NOTE this is an exception to the padding pattern
 		yOverallEnd := bnd.bottom - padding
 		xStart := bnd.left
-		for yStart := yOverallStart; yStart < yOverallEnd; yStart += fl.spacing {
+		// print the lines and any midpoints
+		for yStart := yOverallStart; yStart <= yOverallEnd; yStart += fl.spacing {
 			xEnd := bnd.right - padding
 			width := xEnd - xStart
 
@@ -569,20 +709,52 @@ func (fl flowLines) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reducedBounds bounds
 			// tan = (yend-ystart)/width
 			// yend = width*tan+ystart
 			yEnd := math.Tan(fl.angleRad)*width + yStart
-			if yEnd > yOverallEnd {
+			if yEnd > yOverallEnd+0.001 { // need 0.001 for float imprecision on final line if on the boundary
 				yEnd = yOverallEnd
 				// work backwards
 				width = (yEnd - yStart) / math.Tan(fl.angleRad)
 				xEnd = xStart + width
 			}
 
+			// if is first record
+			// determine the x and y midpoint coordinate offsets
+			if yStart == yOverallStart {
+				midPointXOffSet = (xEnd - xStart) / float64(fl.midPoints+1)
+				midPointYOffSet = (yEnd - yStart) / float64(fl.midPoints+1)
+				ticksXOffSet = (xEnd - xStart) / float64(fl.ticks+1)
+				ticksYOffSet = (yEnd - yStart) / float64(fl.ticks+1)
+			}
+
 			pdf.Line(xStart, yStart, xEnd, yEnd)
+			// print any midpoints
+			for i := int64(1); i <= fl.midPoints; i++ {
+				mpX := xStart + float64(i)*midPointXOffSet
+				mpY := yStart + float64(i)*midPointYOffSet
+				if mpY > yOverallEnd+0.001 {
+					break
+				}
+				pdf.Circle(mpX, mpY, midPointCircleRadius, "F")
+				pdf.Circle(xStart, mpY, midPointCircleRadius, "F")
+			}
+
+			// print any ticks
+			for i := int64(1); i <= fl.ticks; i++ {
+				tickStartX := xStart + float64(i)*ticksXOffSet
+				tickStartY := yStart + float64(i)*ticksYOffSet
+				if tickStartY > yOverallEnd+0.001 {
+					break
+				}
+
+				tickEndX := tickStartX + math.Cos(tickAngle)*tickLength
+				tickEndY := tickStartY + math.Sin(tickAngle)*tickLength
+				pdf.Line(tickStartX, tickStartY, tickEndX, tickEndY)
+			}
 		}
 	} else {
 		xOverallStart := bnd.left
 		xOverallEnd := bnd.right - padding
 		yStart := bnd.top + padding/2 // NOTE this is an exception to the padding pattern
-		for xStart := xOverallStart; xStart < xOverallEnd; xStart += fl.spacing {
+		for xStart := xOverallStart; xStart <= xOverallEnd; xStart += fl.spacing {
 			yEnd := bnd.bottom - padding
 			height := yEnd - yStart
 
@@ -590,14 +762,32 @@ func (fl flowLines) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reducedBounds bounds
 			// tan = height/(xend-xstart)
 			// xend = height/tan +xstart
 			xEnd := height/math.Tan(fl.angleRad) + xStart
-			if xEnd > xOverallEnd {
+			if xEnd > xOverallEnd+0.001 { // need 0.001 for float imprecision on final line if on the boundary
 				xEnd = xOverallEnd
 				// work backwards
 				height = (xEnd - xStart) * math.Tan(fl.angleRad)
 				yEnd = yStart + height
 			}
 
+			// if is first record
+			// determine the x and y midpoint coordinate offsets
+			if xStart == xOverallStart {
+				midPointXOffSet = (xEnd - xStart) / float64(fl.midPoints+1)
+				midPointYOffSet = (yEnd - yStart) / float64(fl.midPoints+1)
+			}
+
 			pdf.Line(xStart, yStart, xEnd, yEnd)
+
+			// print any midpoints
+			for i := int64(1); i <= fl.midPoints; i++ {
+				mpX := xStart + float64(i)*midPointXOffSet
+				mpY := yStart + float64(i)*midPointYOffSet
+				if mpX > xOverallEnd+0.001 {
+					break
+				}
+				pdf.Circle(mpX, mpY, midPointCircleRadius, "F")
+				pdf.Circle(mpX, yStart, midPointCircleRadius, "F")
+			}
 		}
 	}
 
