@@ -73,7 +73,7 @@ func songsheetCmd(cmd *cobra.Command, args []string) error {
 
 	bnd := bounds{padding, padding, 11, 8.5}
 	if headerFlag {
-		bnd = printHeader(pdf, bnd)
+		bnd = printHeader(pdf, bnd, nil)
 	}
 
 	_ = elem.printPDF(pdf, bnd)
@@ -89,8 +89,9 @@ func parseElem(text string) (elem ssElement, err error) {
 	elemKinds := []ssElement{
 		pillar{},
 		flowLines{},
+		sines{},
 		grid{},
-		groupElem{},
+		groupElem{parseFn: parseElem},
 	}
 
 	for _, elemKind := range elemKinds {
@@ -126,7 +127,15 @@ func (b bounds) Height() float64 {
 
 // --------------------------------
 
-func printHeader(pdf *gofpdf.Fpdf, bnd bounds) (reducedBounds bounds) {
+type headerContent struct {
+	tuning  string
+	capo    string
+	bpm     string
+	timesig string
+	feel    string
+}
+
+func printHeader(pdf *gofpdf.Fpdf, bnd bounds, hc *headerContent) (reducedBounds bounds) {
 	dateRightOffset := 2.0
 	totalHeaderHeight := 1.0
 	boxHeight := 0.25
@@ -155,6 +164,16 @@ func printHeader(pdf *gofpdf.Fpdf, bnd bounds) (reducedBounds bounds) {
 
 	// print box contents
 	conts := []string{"TUNING:", "CAPO:", "BPM:", "TIMESIG:", "FEEL:"}
+	if hc != nil {
+		conts = []string{
+			"TUNING: " + hc.tuning,
+			"CAPO: " + hc.capo,
+			"BPM: " + hc.bpm,
+			"TIMESIG: " + hc.timesig,
+			"FEEL: " + hc.feel,
+		}
+	}
+
 	xTextAreaStart := bnd.left + boxTextMargin
 	xTextAreaEnd := bnd.right - padding - boxTextMargin
 	xTextIncr := (xTextAreaEnd - xTextAreaStart) / float64(len(conts))
@@ -176,8 +195,9 @@ type ssElement interface {
 // ----------------------------------------
 
 type groupElem struct {
-	kind  string // "row", "col", or "combo"
-	elems []ssElement
+	kind    string // "row", "col", or "combo"
+	elems   []ssElement
+	parseFn func(text string) (ssElement, error)
 }
 
 var _ ssElement = groupElem{}
@@ -222,10 +242,10 @@ func (ge groupElem) parseText(text string) (ssElement, error) {
 	// last element doesn't need an ';' at the end
 	split = append(split, text[lastCutI:])
 
-	//fmt.Printf("debug split: %v\n", split)
-
 	for _, elemText := range split {
-		elem, err := parseElem(elemText)
+
+		//elem, err := parseElem(elemText)
+		elem, err := ge.parseFn(elemText)
 		if err != nil {
 			return nil, err
 		}
@@ -511,7 +531,7 @@ func (pil pillar) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reducedBounds bounds) 
 type grid struct {
 	isHorizontal bool
 	spacing      float64
-	size         float64
+	cells        float64
 }
 
 var _ ssElement = grid{}
@@ -543,12 +563,11 @@ func (g grid) parseText(text string) (elem ssElement, err error) {
 			return nil, err
 		}
 	case 2:
-
 		flOut.spacing, err = strconv.ParseFloat(split[0], 64)
 		if err != nil {
 			return nil, err
 		}
-		flOut.size, err = strconv.ParseFloat(split[1], 64)
+		flOut.cells, err = strconv.ParseFloat(split[1], 64)
 		if err != nil {
 			return nil, err
 		}
@@ -560,20 +579,45 @@ func (g grid) parseText(text string) (elem ssElement, err error) {
 
 func (g grid) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reducedBounds bounds) {
 
-	var usedBnd bounds
+	//var usedBnd bounds
+	//if g.isHorizontal {
+	//usedBnd = bounds{bnd.top, bnd.left, bnd.top + g.size, bnd.right}
+	//} else {
+	//usedBnd = bounds{bnd.top, bnd.left, bnd.bottom, bnd.left + g.size}
+	//}
+
+	//NewFlowLines(true, g.spacing, 0, 0, 0).printPDF(pdf, usedBnd)
+	//NewFlowLines(false, g.spacing, math.Pi/2, 0, 0).printPDF(pdf, usedBnd)
+
+	var xBound, yBound float64 = 0, 0
 	if g.isHorizontal {
-		usedBnd = bounds{bnd.top, bnd.left, bnd.top + g.size, bnd.right}
+		xBound = bnd.right - padding
+		yBound = bnd.top + g.cells*g.spacing
 	} else {
-		usedBnd = bounds{bnd.top, bnd.left, bnd.bottom, bnd.left + g.size}
+		xBound = bnd.left + g.cells*g.spacing
+		yBound = bnd.bottom - padding
 	}
 
-	NewFlowLines(true, g.spacing, 0, 0, 0).printPDF(pdf, usedBnd)
-	NewFlowLines(false, g.spacing, math.Pi/2, 0, 0).printPDF(pdf, usedBnd)
+	// horizontal lines
+	for yStart := bnd.top; yStart <= yBound; yStart += g.spacing {
+		xStart := bnd.left
+		xEnd := xBound
+		yEnd := yStart
+		pdf.Line(xStart, yStart, xEnd, yEnd)
+	}
+
+	// vertical lines
+	for xStart := bnd.left; xStart <= xBound; xStart += g.spacing {
+		yStart := bnd.top
+		yEnd := yBound
+		xEnd := xStart
+		pdf.Line(xStart, yStart, xEnd, yEnd)
+	}
 
 	if g.isHorizontal {
-		return bounds{bnd.top + g.size, bnd.left, bnd.bottom, bnd.right}
+		return bounds{yBound, bnd.left, bnd.bottom, bnd.right}
 	} else {
-		return bounds{bnd.top, bnd.left + g.size, bnd.bottom, bnd.right}
+		return bounds{bnd.top, xBound, bnd.bottom, bnd.right}
 	}
 }
 
@@ -581,14 +625,14 @@ func (g grid) getWidth() (isStatic bool, width float64) {
 	if g.isHorizontal {
 		return false, 0
 	}
-	return true, g.size
+	return true, g.cells * g.spacing
 }
 
 func (g grid) getHeight() (isStatic bool, height float64) {
 	if !g.isHorizontal {
 		return false, 0
 	}
-	return true, g.size
+	return true, g.cells * g.spacing
 }
 
 // ---------------------
@@ -597,12 +641,13 @@ type flowLines struct {
 	isHorizontal bool
 	spacing      float64
 	angleRad     float64 // in radians
+	shift        float64 // startpoint shift
 	midPoints    int64   // any midpoints labelled with circles
 	ticks        int64   // any midpoints labelled with circles
 }
 
 // NewflowLines creates a new flowLines object
-func NewFlowLines(isHorizontal bool, spacing, angleRad float64,
+func NewFlowLines(isHorizontal bool, spacing, angleRad, shift float64,
 	midPoints, ticks int64) flowLines {
 	return flowLines{
 		isHorizontal: isHorizontal,
@@ -619,10 +664,10 @@ func (fl flowLines) parseText(text string) (elem ssElement, err error) {
 	flOut := flowLines{}
 	if strings.HasPrefix(text, "LINES") {
 		text = strings.TrimPrefix(text, "LINES")
-		flOut = NewFlowLines(true, 2*padding, 0, 0, 0)
+		flOut = NewFlowLines(true, 2*padding, 0, padding/2, 0, 0)
 	} else if strings.HasPrefix(text, "VLINES") {
 		text = strings.TrimPrefix(text, "VLINES")
-		flOut = NewFlowLines(false, 2*padding, math.Pi/2, 0, 0)
+		flOut = NewFlowLines(false, 2*padding, math.Pi/2, padding/2, 0, 0)
 	} else {
 		return nil, nil
 	}
@@ -641,7 +686,6 @@ func (fl flowLines) parseText(text string) (elem ssElement, err error) {
 			return nil, err
 		}
 	case 2:
-
 		flOut.spacing, err = strconv.ParseFloat(split[0], 64)
 		if err != nil {
 			return nil, err
@@ -659,7 +703,7 @@ func (fl flowLines) parseText(text string) (elem ssElement, err error) {
 		if err != nil {
 			return nil, err
 		}
-		flOut.midPoints, err = strconv.ParseInt(split[2], 10, 64)
+		flOut.shift, err = strconv.ParseFloat(split[2], 64)
 		if err != nil {
 			return nil, err
 		}
@@ -672,11 +716,32 @@ func (fl flowLines) parseText(text string) (elem ssElement, err error) {
 		if err != nil {
 			return nil, err
 		}
-		flOut.midPoints, err = strconv.ParseInt(split[2], 10, 64)
+		flOut.shift, err = strconv.ParseFloat(split[2], 64)
 		if err != nil {
 			return nil, err
 		}
-		flOut.ticks, err = strconv.ParseInt(split[3], 10, 64)
+		flOut.midPoints, err = strconv.ParseInt(split[3], 10, 64)
+		if err != nil {
+			return nil, err
+		}
+	case 5:
+		flOut.spacing, err = strconv.ParseFloat(split[0], 64)
+		if err != nil {
+			return nil, err
+		}
+		flOut.angleRad, err = strconv.ParseFloat(split[1], 64)
+		if err != nil {
+			return nil, err
+		}
+		flOut.shift, err = strconv.ParseFloat(split[2], 64)
+		if err != nil {
+			return nil, err
+		}
+		flOut.midPoints, err = strconv.ParseInt(split[3], 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		flOut.ticks, err = strconv.ParseInt(split[4], 10, 64)
 		if err != nil {
 			return nil, err
 		}
@@ -694,10 +759,10 @@ func (fl flowLines) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reducedBounds bounds
 	midPointCircleRadius := padding / 10
 	tickLength := fl.spacing / 10
 	tickAngle := fl.angleRad + math.Pi/2 // perpendicular
-	fmt.Printf("debug tickAngle: %v\n", tickAngle)
 
 	if fl.isHorizontal {
-		yOverallStart := bnd.top + padding/2 // NOTE this is an exception to the padding pattern
+		yOverallStart := bnd.top + fl.shift
+
 		yOverallEnd := bnd.bottom - padding
 		xStart := bnd.left
 		// print the lines and any midpoints
@@ -709,7 +774,9 @@ func (fl flowLines) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reducedBounds bounds
 			// tan = (yend-ystart)/width
 			// yend = width*tan+ystart
 			yEnd := math.Tan(fl.angleRad)*width + yStart
-			if yEnd > yOverallEnd+0.001 { // need 0.001 for float imprecision on final line if on the boundary
+
+			// need 0.001 for float imprecision on final line if on the boundary
+			if yEnd > yOverallEnd+0.001 {
 				yEnd = yOverallEnd
 				// work backwards
 				width = (yEnd - yStart) / math.Tan(fl.angleRad)
@@ -753,7 +820,7 @@ func (fl flowLines) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reducedBounds bounds
 	} else {
 		xOverallStart := bnd.left
 		xOverallEnd := bnd.right - padding
-		yStart := bnd.top + padding/2 // NOTE this is an exception to the padding pattern
+		yStart := bnd.top + fl.shift
 		for xStart := xOverallStart; xStart <= xOverallEnd; xStart += fl.spacing {
 			yEnd := bnd.bottom - padding
 			height := yEnd - yStart
@@ -762,7 +829,9 @@ func (fl flowLines) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reducedBounds bounds
 			// tan = height/(xend-xstart)
 			// xend = height/tan +xstart
 			xEnd := height/math.Tan(fl.angleRad) + xStart
-			if xEnd > xOverallEnd+0.001 { // need 0.001 for float imprecision on final line if on the boundary
+
+			// need 0.001 for float imprecision on final line if on the boundary
+			if xEnd > xOverallEnd+0.001 {
 				xEnd = xOverallEnd
 				// work backwards
 				height = (xEnd - xStart) * math.Tan(fl.angleRad)
@@ -800,5 +869,151 @@ func (fl flowLines) getWidth() (isStatic bool, width float64) {
 }
 
 func (fl flowLines) getHeight() (isStatic bool, height float64) {
+	return false, 0
+}
+
+// ---------------------
+
+type sines struct {
+	isHorizontal bool
+	spacing      float64
+	shift        float64
+	resolution   float64
+	amplitude    float64
+	frequency    float64
+}
+
+var _ ssElement = sines{}
+
+func (s sines) parseText(text string) (elem ssElement, err error) {
+	sOut := sines{}
+	if strings.HasPrefix(text, "SINES") {
+		sOut = sines{true, 2 * padding, padding / 2, padding / 10, padding, padding}
+		text = strings.TrimPrefix(text, "SINES")
+	} else if strings.HasPrefix(text, "HSINES") {
+		sOut = sines{false, 2 * padding, padding / 2, padding / 10, padding, padding}
+		text = strings.TrimPrefix(text, "HSINES")
+	} else {
+		return nil, nil
+	}
+
+	if len(text) == 0 {
+		return sOut, nil
+	}
+	text = strings.TrimPrefix(text, "[")
+	text = strings.TrimSuffix(text, "]")
+	split := strings.Split(text, ",")
+
+	switch len(split) {
+	case 1:
+		sOut.spacing, err = strconv.ParseFloat(split[0], 64)
+		if err != nil {
+			return nil, err
+		}
+	case 2:
+		sOut.spacing, err = strconv.ParseFloat(split[0], 64)
+		if err != nil {
+			return nil, err
+		}
+		sOut.shift, err = strconv.ParseFloat(split[1], 64)
+		if err != nil {
+			return nil, err
+		}
+	case 3:
+		sOut.spacing, err = strconv.ParseFloat(split[0], 64)
+		if err != nil {
+			return nil, err
+		}
+		sOut.shift, err = strconv.ParseFloat(split[1], 64)
+		if err != nil {
+			return nil, err
+		}
+		sOut.resolution, err = strconv.ParseFloat(split[2], 64)
+		if err != nil {
+			return nil, err
+		}
+	case 4:
+		sOut.spacing, err = strconv.ParseFloat(split[0], 64)
+		if err != nil {
+			return nil, err
+		}
+		sOut.shift, err = strconv.ParseFloat(split[1], 64)
+		if err != nil {
+			return nil, err
+		}
+		sOut.resolution, err = strconv.ParseFloat(split[2], 64)
+		if err != nil {
+			return nil, err
+		}
+		sOut.amplitude, err = strconv.ParseFloat(split[3], 64)
+		if err != nil {
+			return nil, err
+		}
+	case 5:
+		sOut.spacing, err = strconv.ParseFloat(split[0], 64)
+		if err != nil {
+			return nil, err
+		}
+		sOut.shift, err = strconv.ParseFloat(split[1], 64)
+		if err != nil {
+			return nil, err
+		}
+		sOut.resolution, err = strconv.ParseFloat(split[2], 64)
+		if err != nil {
+			return nil, err
+		}
+		sOut.amplitude, err = strconv.ParseFloat(split[3], 64)
+		if err != nil {
+			return nil, err
+		}
+		sOut.frequency, err = strconv.ParseFloat(split[4], 64)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("bad input for %v", text)
+	}
+	return sOut, nil
+}
+
+func (s sines) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reducedBounds bounds) {
+
+	pdf.SetLineWidth(thinestLW)
+
+	resolution := s.resolution
+
+	if s.isHorizontal {
+		yOverallStart := bnd.top + s.shift
+		yOverallEnd := bnd.bottom - padding
+		xStart := bnd.left
+		xEnd := bnd.right - padding
+		for yStart := yOverallStart; yStart <= yOverallEnd; yStart += s.spacing {
+			lastPointX := xStart
+			lastPointY := yStart
+			for eqX := float64(0); true; eqX += resolution {
+				if xStart+eqX > xEnd {
+					break
+				}
+				eqY := s.amplitude * math.Cos(s.frequency*eqX)
+				if eqX > 0 {
+					pdf.Line(lastPointX, lastPointY, xStart+eqX, yStart+eqY)
+				}
+				lastPointX = xStart + eqX
+				lastPointY = yStart + eqY
+			}
+		}
+	} else {
+		// TODO
+	}
+
+	// uses entire bounds
+	return bounds{bnd.bottom, bnd.left, bnd.bottom, bnd.left}
+}
+
+func (s sines) getWidth() (isStatic bool, width float64) {
+	return false, 0
+}
+
+func (s sines) getHeight() (isStatic bool, height float64) {
 	return false, 0
 }
