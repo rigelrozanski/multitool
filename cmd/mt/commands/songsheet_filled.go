@@ -6,8 +6,10 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/jung-kurt/gofpdf"
+	"github.com/rigelrozanski/thranch/quac"
 	"github.com/spf13/cobra"
 )
 
@@ -33,18 +35,41 @@ func songsheetFilledCmd(cmd *cobra.Command, args []string) error {
 	pdf.AddPage()
 
 	elemKinds := []tssElement{
+		chordChart{},
 		singleSpacing{},
 		singleAnnotatedSine{},
 		singleLyricLine{},
 	}
 
-	// XXX
-	//quid, err := parseElem(args[0])
-	//if err != nil {
-	//return err
-	//}
+	quid, err := strconv.Atoi(args[0])
+	if err != nil {
+		return err
+	}
+
+	content, found := quac.GetContentByID(uint32(quid))
+	if !found {
+		return errors.New("could not find anything under id: %v", quid)
+	}
+	lines := strings.Split(string(content), "\n")
 
 	// get contents of songsheet
+	// parse all the elems
+	parsedElems := []tssElement{}
+
+OUTER:
+	if len(lines) > 0 {
+		for _, elem := range elemKinds {
+			reduced, newElem, err := elem.parseText(lines)
+			if err == nil {
+				lines = reduced
+				parsedElems = append(parsedElems, newElem)
+				goto OUTER
+			}
+		}
+		return fmt.ErrorsF("could not parse song at line %v", lines[0])
+	}
+
+	// XXX print the songsheet
 
 	bnd := bounds{padding, padding, 11, 8.5}
 	if headerFlag {
@@ -59,7 +84,7 @@ func songsheetFilledCmd(cmd *cobra.Command, args []string) error {
 // whole text songsheet element
 type tssElement interface {
 	ssElement
-	parseText(text string) (reducedText string, elem tssElement, err error)
+	parseText(lines string) (reducedLines []string, elem tssElement, err error)
 }
 
 // ---------------------
@@ -75,8 +100,7 @@ type Chord struct {
 
 var _ tssElement = chordChart{}
 
-func (c chordChart) parseText(text string) (reduced string, elem tssElement, err error) {
-	lines := strings.Split(text, "\n")
+func (c chordChart) parseText(lines []string) (reduced []string, elem tssElement, err error) {
 	if len(lines) < 9 {
 		return text, elem, fmt.Errorf("improper number of input lines, want 1 have %v", len(lines))
 	}
@@ -112,7 +136,7 @@ func (c chordChart) parseText(text string) (reduced string, elem tssElement, err
 			break
 		}
 
-		c := chord{name: string(chordNames[j])}
+		c := Chord{name: string(chordNames[j])}
 
 		// add the second character to the name (if it exists)
 		if j+1 < len(chordNames) {
@@ -127,7 +151,7 @@ func (c chordChart) parseText(text string) (reduced string, elem tssElement, err
 
 			if j+1 < len(lines[i]) {
 				if lines[i][j+1] != ' ' {
-					word := append(word, string(lines[i][j+1]))
+					word = append(word, string(lines[i][j+1]))
 				}
 			}
 			num, err := strconv.Atoi(word)
@@ -139,7 +163,7 @@ func (c chordChart) parseText(text string) (reduced string, elem tssElement, err
 	}
 
 	// chop off the first 9 lines
-	return text[9:], c, nil
+	return lines[9:], c, nil
 }
 
 func (c chordChart) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds) {
@@ -160,15 +184,14 @@ type singleSpacing struct{}
 
 var _ tssElement = singleSpacing{}
 
-func (s singleSpacing) parseText(text string) (elem tssElement, err error) {
-	lines := strings.Split(text, "\n")
-	if len(lines) != 1 {
+func (s singleSpacing) parseText(lines []string) (reduced []string, elem tssElement, err error) {
+	if len(lines) < 1 {
 		return elem, fmt.Errorf("improper number of input lines, want 1 have %v", len(lines))
 	}
 	if len(strings.TrimSpace(lines[0])) != 0 {
 		return elem, errors.New("blank line contains content")
 	}
-	return singleSpacing{}, nil
+	return text[1:], singleSpacing{}, nil
 }
 
 func (s singleSpacing) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds) {
@@ -186,64 +209,61 @@ func (s singleSpacing) getHeight() (isStatic bool, height float64) {
 // ---------------------
 
 type singleLineLyrics struct {
-	lyricLocos  []stringInt
-	melodyLocos []stringInt
+	lyrics   string
+	melodies []melody
+}
+
+type melody struct {
+	blank              bool // no melody here, this is just a placeholder
+	num                rune
+	modifierIsAboveNum bool // otherwise below
+	modifier           rune // either '.', '-', or '~'
 }
 
 var _ tssElement = singleLineLyrics{}
 
-type stringInt struct {
-	s string
-	i int
-}
+func (s singleLineLyrics) parseText(lines []string) (reduced []string, elem tssElement, err error) {
+	if len(lines) < 4 {
+		return lines, elem, fmt.Errorf("improper number of input lines, want 1 have %v", len(lines))
+	}
 
-// split up a string into its constituent
-// words and write record each words locations
-func getLocos(str string) (out []stringInt) {
+	sll := singleLineLyrics{}
+	sll.lyrics = lines[0]
 
-	locationCount := 0
-
-	remaining := str
-	for {
-		spl := strings.SplitN(remaining, " ", 2)
-		locationCount++ // for the space
-		if len(spl) > 0 {
-			if len(spl[0]) == 0 {
-				continue
-			}
-			out = append(out, stringInt{spl[0], locationCount})
-			locationCount += len(spl[0])
-
-			if len(spl) == 1 {
-				break
-			}
-			if len(spl) == 2 {
-				remaining = spl[1]
-			}
-		} else {
-			break
+	upperMods := lines[1]
+	melodyNums := lines[2]
+	lowerMods := lines[3]
+	for i, r := range melodyNums {
+		if !(unicode.IsSpace(r) || unicode.IsNumber(r)) {
+			return lines, elem, fmt.Errorf(
+				"melodies line contains something other than numbers and spaces (rune: %v, col: %v)", r, i)
 		}
+		if unicode.IsSpace(r) {
+			sll.melodies == append(sll.melodies, melody{blank: true})
+		} else {
+			m := melody{blank: false, num: r}
+			if len(upperMods) > i && !unicode.IsSpace(upperMods[i]) {
+				m.modifierIsAboveNum = true
+				m.modifier = upperMods[i]
+			} else if len(lowerMods) > i && !unicode.IsSpace(lowerMods[i]) {
+				m.modifierIsAboveNum = false
+				m.modifier = lowerMods[i]
+			} else { // there must be no modifier
+				return lines, elem, fmt.Errorf("no melody modifier for the melody")
+			}
+
+			// ensure that the melody modifier has a valid rune
+			if !(m.modifier == '.' || m.modifier == '-' || m.modifier == '~') {
+				return lines, elem, fmt.Errorf(
+					"bad modifier not '.', '-', or '~' (have %v)", m.modifier)
+			}
+
+			sll.melodies == append(sll.melodies, m)
+		}
+
 	}
 
-}
-
-func (s singleLineLyrics) parseText(text string) (elem tssElement, err error) {
-	lines := strings.Split(text, "\n")
-	if len(lines) != 2 {
-		return elem, fmt.Errorf("improper number of input lines, want 1 have %v", len(lines))
-	}
-
-	// lyrics
-
-	lyricWords := strings.Split(text, " ")
-	lyricMelodies := strings.Split(text, " ")
-
-	if len(lyricWords) != len(lyricMelodies) {
-		return elem, fmt.Errorf("different number of lyrics (%v) and melodies (%v) for:\n%v",
-			lyricWords, lyricMelodies, text)
-	}
-
-	return singleLineLyrics{}, nil
+	return lines[4:], sll, nil
 }
 
 func (s singleLineLyrics) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds) {
@@ -273,7 +293,7 @@ type sineAnnotation struct {
 
 var _ tssElement = singleAnnotatedSine{}
 
-func (s singleAnnotatedSine) parseText(text string) (elem tssElement, err error) {
+func (s singleAnnotatedSine) parseText(lines []string) (reduced []string, elem tssElement, err error) {
 
 	// the annotated sine must come in 4 lines
 	//    ex.   desciption
@@ -284,7 +304,7 @@ func (s singleAnnotatedSine) parseText(text string) (elem tssElement, err error)
 
 	lines := strings.Split(text, "\n")
 	if len(lines) != 4 {
-		return elem, fmt.Errorf("improper number of input lines, want 4 have %v", len(lines))
+		return lines, elem, fmt.Errorf("improper number of input lines, want 4 have %v", len(lines))
 	}
 
 	humpsChars := len(lines[0])
@@ -310,6 +330,14 @@ func (s singleAnnotatedSine) parseText(text string) (elem tssElement, err error)
 		alongSine = append(alongSine,
 			[]sineAnnotation{float64(pos) / 4, ch})
 	}
+
+	sas := singleAnnotatedSine{
+		humps:         humps,
+		boldedCentral: boldedCentral,
+		alongSine:     alongSine,
+	}
+
+	return lines[4:], sas, nil
 }
 
 func (s singleAnnotatedSine) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds) {
