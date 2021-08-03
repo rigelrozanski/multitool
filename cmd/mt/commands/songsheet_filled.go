@@ -38,7 +38,7 @@ func songsheetFilledCmd(cmd *cobra.Command, args []string) error {
 		chordChart{},
 		singleSpacing{},
 		singleAnnotatedSine{},
-		singleLyricLine{},
+		singleLineLyrics{},
 	}
 
 	quid, err := strconv.Atoi(args[0])
@@ -48,7 +48,7 @@ func songsheetFilledCmd(cmd *cobra.Command, args []string) error {
 
 	content, found := quac.GetContentByID(uint32(quid))
 	if !found {
-		return errors.New("could not find anything under id: %v", quid)
+		return fmt.Errorf("could not find anything under id: %v", quid)
 	}
 	lines := strings.Split(string(content), "\n")
 
@@ -66,7 +66,7 @@ OUTER:
 				goto OUTER
 			}
 		}
-		return fmt.ErrorsF("could not parse song at line %v", lines[0])
+		return fmt.Errorf("could not parse song at line %v", lines[0])
 	}
 
 	// XXX print the songsheet
@@ -75,16 +75,20 @@ OUTER:
 	if headerFlag {
 		bnd = printHeader(pdf, bnd, nil) // XXX
 	}
-	_ = elem.printPDF(pdf, bnd)
-	return pdf.OutputFileAndClose(fmt.Sprintf("songsheet_%v.pdf", title))
+	//_ = elem.printPDF(pdf, bnd)
+	//return pdf.OutputFileAndClose(fmt.Sprintf("songsheet_%v.pdf", title))
+	return nil // XXX
 }
 
 // ---------------------
 
 // whole text songsheet element
 type tssElement interface {
-	ssElement
-	parseText(lines string) (reducedLines []string, elem tssElement, err error)
+	//ssElement
+	printPDF(*gofpdf.Fpdf, bounds) (reduced bounds)
+	getWidth() (isStatic bool, width float64)   // width is only valid if isStatic=true
+	getHeight() (isStatic bool, height float64) // height is only valid if isStatic=true
+	parseText(lines []string) (reducedLines []string, elem tssElement, err error)
 }
 
 // ---------------------
@@ -102,7 +106,7 @@ var _ tssElement = chordChart{}
 
 func (c chordChart) parseText(lines []string) (reduced []string, elem tssElement, err error) {
 	if len(lines) < 9 {
-		return text, elem, fmt.Errorf("improper number of input lines, want 1 have %v", len(lines))
+		return lines, elem, fmt.Errorf("improper number of input lines, want 1 have %v", len(lines))
 	}
 
 	// checking form, must be in the pattern as such:
@@ -116,14 +120,14 @@ func (c chordChart) parseText(lines []string) (reduced []string, elem tssElement
 	//  |  |  |
 	//  F  G  C
 	if !strings.HasPrefix(lines[0], "  |  |  |") {
-		return text, elem, fmt.Errorf("not a chord chart (line 1)")
+		return lines, elem, fmt.Errorf("not a chord chart (line 1)")
 	}
 	if !strings.HasPrefix(lines[7], "  |  |  |") {
-		return text, elem, fmt.Errorf("not a chord chart (line 7)")
+		return lines, elem, fmt.Errorf("not a chord chart (line 7)")
 	}
 	for i := 1; i <= 6; i++ {
 		if !strings.HasPrefix(lines[i], "- ") {
-			return text, elem, fmt.Errorf("not a chord chart (line %v)", i)
+			return lines, elem, fmt.Errorf("not a chord chart (line %v)", i)
 		}
 	}
 
@@ -141,7 +145,7 @@ func (c chordChart) parseText(lines []string) (reduced []string, elem tssElement
 		// add the second character to the name (if it exists)
 		if j+1 < len(chordNames) {
 			if chordNames[j+1] != ' ' {
-				c.name = append(c.name, string(chordNames[j+1]))
+				c.name += string(chordNames[j+1])
 			}
 		}
 
@@ -151,12 +155,12 @@ func (c chordChart) parseText(lines []string) (reduced []string, elem tssElement
 
 			if j+1 < len(lines[i]) {
 				if lines[i][j+1] != ' ' {
-					word = append(word, string(lines[i][j+1]))
+					word += string(lines[i][j+1])
 				}
 			}
 			num, err := strconv.Atoi(word)
 			if err != nil {
-				return text, elem, fmt.Errorf("bad number conversion for %v at %v,%v", word, j, i)
+				return lines, elem, fmt.Errorf("bad number conversion for %v at %v,%v", word, j, i)
 			}
 			c.chords = append(c.chords, num)
 		}
@@ -186,12 +190,12 @@ var _ tssElement = singleSpacing{}
 
 func (s singleSpacing) parseText(lines []string) (reduced []string, elem tssElement, err error) {
 	if len(lines) < 1 {
-		return elem, fmt.Errorf("improper number of input lines, want 1 have %v", len(lines))
+		return lines, elem, fmt.Errorf("improper number of input lines, want 1 have %v", len(lines))
 	}
 	if len(strings.TrimSpace(lines[0])) != 0 {
-		return elem, errors.New("blank line contains content")
+		return lines, elem, errors.New("blank line contains content")
 	}
-	return text[1:], singleSpacing{}, nil
+	return lines[1:], singleSpacing{}, nil
 }
 
 func (s singleSpacing) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds) {
@@ -239,15 +243,15 @@ func (s singleLineLyrics) parseText(lines []string) (reduced []string, elem tssE
 				"melodies line contains something other than numbers and spaces (rune: %v, col: %v)", r, i)
 		}
 		if unicode.IsSpace(r) {
-			sll.melodies == append(sll.melodies, melody{blank: true})
+			sll.melodies = append(sll.melodies, melody{blank: true})
 		} else {
 			m := melody{blank: false, num: r}
-			if len(upperMods) > i && !unicode.IsSpace(upperMods[i]) {
+			if len(upperMods) > i && !unicode.IsSpace(rune(upperMods[i])) {
 				m.modifierIsAboveNum = true
-				m.modifier = upperMods[i]
-			} else if len(lowerMods) > i && !unicode.IsSpace(lowerMods[i]) {
+				m.modifier = rune(upperMods[i])
+			} else if len(lowerMods) > i && !unicode.IsSpace(rune(lowerMods[i])) {
 				m.modifierIsAboveNum = false
-				m.modifier = lowerMods[i]
+				m.modifier = rune(lowerMods[i])
 			} else { // there must be no modifier
 				return lines, elem, fmt.Errorf("no melody modifier for the melody")
 			}
@@ -258,7 +262,7 @@ func (s singleLineLyrics) parseText(lines []string) (reduced []string, elem tssE
 					"bad modifier not '.', '-', or '~' (have %v)", m.modifier)
 			}
 
-			sll.melodies == append(sll.melodies, m)
+			sll.melodies = append(sll.melodies, m)
 		}
 
 	}
@@ -302,7 +306,6 @@ func (s singleAnnotatedSine) parseText(lines []string) (reduced []string, elem t
 	// 3) F      bolded central annotations
 	// 4)   ^ v  annotations along the sine curve
 
-	lines := strings.Split(text, "\n")
 	if len(lines) != 4 {
 		return lines, elem, fmt.Errorf("improper number of input lines, want 4 have %v", len(lines))
 	}
@@ -313,22 +316,22 @@ func (s singleAnnotatedSine) parseText(lines []string) (reduced []string, elem t
 	}
 	humps := float64(humpsChars) / 4
 
-	boldedCentral := make([]sineAnnotation)
+	boldedCentral := []sineAnnotation{}
 	for pos, ch := range lines[2] {
 		if ch == ' ' {
 			continue
 		}
 		boldedCentral = append(boldedCentral,
-			[]sineAnnotation{float64(pos) / 4, ch})
+			sineAnnotation{float64(pos) / 4, ch})
 	}
 
-	alongSine := make([]sineAnnotation)
+	alongSine := []sineAnnotation{}
 	for pos, ch := range lines[3] {
 		if ch == ' ' {
 			continue
 		}
 		alongSine = append(alongSine,
-			[]sineAnnotation{float64(pos) / 4, ch})
+			sineAnnotation{float64(pos) / 4, ch})
 	}
 
 	sas := singleAnnotatedSine{
@@ -346,16 +349,16 @@ func (s singleAnnotatedSine) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bou
 
 	// Print the sine function
 	pdf.SetLineWidth(thinestLW)
-	resolution := 10
+	resolution := 10.0
 	amplitude := 0.04 // XXX
 	width := bnd.right - bnd.left - padding
 	frequency := math.Pi * 2 * s.humps / width
-	yStart := bnd.top + s.shift
+	yStart := bnd.top
 	xStart := bnd.left
 	xEnd := bnd.right - padding
 	lastPointX := xStart
 	lastPointY := yStart
-	for eqX := float64(0); true; eqX += 10 {
+	for eqX := float64(0); true; eqX += resolution {
 		if xStart+eqX > xEnd {
 			break
 		}
