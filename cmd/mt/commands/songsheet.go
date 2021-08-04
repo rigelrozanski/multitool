@@ -128,6 +128,8 @@ func (b bounds) Height() float64 {
 // --------------------------------
 
 type headerContent struct {
+	title   string
+	date    string
 	tuning  string
 	capo    string
 	bpm     string

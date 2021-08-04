@@ -52,6 +52,9 @@ func songsheetFilledCmd(cmd *cobra.Command, args []string) error {
 	}
 	lines := strings.Split(string(content), "\n")
 
+	// get the header
+	lines, hc, err := parseHeader(lines)
+
 	// get contents of songsheet
 	// parse all the elems
 	parsedElems := []tssElement{}
@@ -73,18 +76,77 @@ OUTER:
 
 	bnd := bounds{padding, padding, 11, 8.5}
 	if headerFlag {
-		bnd = printHeader(pdf, bnd, nil) // XXX
+		bnd = printHeader(pdf, bnd, hc)
 	}
 	//_ = elem.printPDF(pdf, bnd)
 	//return pdf.OutputFileAndClose(fmt.Sprintf("songsheet_%v.pdf", title))
 	return nil // XXX
 }
 
+func parseHeader(lines []string) (reduced []string, hc headerContent, err error) {
+	if len(lines) < 2 {
+		return lines, hc, fmt.Errorf("improper number of input lines, want at least 2 have %v", len(lines))
+	}
+
+	splt := strings.SplitN(lines[0], "DATE:", 2)
+	switch len(splt) {
+	case 1:
+		hc.title = splt[0]
+	case 2:
+		hc.title = splt[0]
+		hc.date = splt[1]
+	default:
+		panic("")
+	}
+
+	flds := strings.Fields(lines[1])
+	keywords := map[string]string{
+		"TUNING:":  "",
+		"CAPO:":    "",
+		"TIMESIG:": "",
+		"FEEL:":    "",
+	}
+	fldIsKeyword := make([]bool, len(flds))
+	for i, fld := range flds {
+		if _, found := keywords[keywords]; found {
+			fldIsKeyword[i] = true
+		}
+	}
+
+	for keyword, _ := range keywords {
+		keywordFound := false
+		keywordText := ""
+		for i, fld := range flds {
+			switch {
+			case !keywordFound && keyword == fld:
+				keywordFound = true
+				continue
+			case keywordFound && keyword == fld:
+				break
+			case keywordFound && keyword != fld && keywordText == "":
+				keywordText = keyword
+			case keywordFound && keyword != fld && keywordText != "":
+				keywordText += " " + keyword
+			}
+		}
+		if keywordFound {
+			keywords[keyword] = keywordText
+		}
+	}
+
+	// assign keywords to the header content
+	hc.tuning = keywords["TUNING:"]
+	hc.capo = keywords["CAPO:"]
+	hc.timesig = keywords["TIMESIG:"]
+	hc.feel = keywords["FEEL:"]
+
+	return lines[2:], hc, nil
+}
+
 // ---------------------
 
 // whole text songsheet element
 type tssElement interface {
-	//ssElement
 	printPDF(*gofpdf.Fpdf, bounds) (reduced bounds)
 	getWidth() (isStatic bool, width float64)   // width is only valid if isStatic=true
 	getHeight() (isStatic bool, height float64) // height is only valid if isStatic=true
@@ -106,7 +168,7 @@ var _ tssElement = chordChart{}
 
 func (c chordChart) parseText(lines []string) (reduced []string, elem tssElement, err error) {
 	if len(lines) < 9 {
-		return lines, elem, fmt.Errorf("improper number of input lines, want 1 have %v", len(lines))
+		return lines, elem, fmt.Errorf("improper number of input lines, want at least 9 have %v", len(lines))
 	}
 
 	// checking form, must be in the pattern as such:
@@ -240,7 +302,8 @@ func (s singleLineLyrics) parseText(lines []string) (reduced []string, elem tssE
 	for i, r := range melodyNums {
 		if !(unicode.IsSpace(r) || unicode.IsNumber(r)) {
 			return lines, elem, fmt.Errorf(
-				"melodies line contains something other than numbers and spaces (rune: %v, col: %v)", r, i)
+				"melodies line contains something other"+
+					"than numbers and spaces (rune: %v, col: %v)", r, i)
 		}
 		if unicode.IsSpace(r) {
 			sll.melodies = append(sll.melodies, melody{blank: true})
@@ -284,6 +347,16 @@ func (s singleLineLyrics) getHeight() (isStatic bool, height float64) {
 
 // ---------------------
 
+func GetFontPt(heightInches float64) float64 {
+	return heightInches * 72.281142957923
+}
+
+func GetCourierFontWidth(height float64) float64 {
+	return 0.43 * height
+}
+
+// ---------------------
+
 type singleAnnotatedSine struct {
 	humps         float64
 	boldedCentral []sineAnnotation
@@ -301,23 +374,31 @@ func (s singleAnnotatedSine) parseText(lines []string) (reduced []string, elem t
 
 	// the annotated sine must come in 4 lines
 	//    ex.   desciption
-	// 1)   _    text representation of the sine humps (top)
-	// 2) _/ \_  text representation of the sine humps (bottom)
-	// 3) F      bolded central annotations
-	// 4)   ^ v  annotations along the sine curve
+	// 1) F              bolded central annotations
+	// 2) _   _   _   _  text representation of the sine humps (top)
+	// 3)  \_/ \_/ \_/   text representation of the sine humps (bottom)
+	// 4)   ^   ^ 1   v  annotations along the sine curve
 
-	if len(lines) != 4 {
+	if len(lines) < 4 {
 		return lines, elem, fmt.Errorf("improper number of input lines, want 4 have %v", len(lines))
 	}
 
-	humpsChars := len(lines[0])
-	if humpsChars < len(lines[1]) {
-		humpsChars = len(lines[1])
+	// ensure that the first two lines start with at least 3 sine humps
+	//_   _   _
+	// \_/ \_/ \_/
+	if !(lines[1].HasPrefix("_   _   _") &&
+		lines[2].HasPrefix(" \\_/ \\_/ \\_/")) {
+		return lines, elem, fmt.Errorf("first lines are not sine humps")
+	}
+
+	humpsChars := len(lines[1]) // TODO may run into issues here with suffix whitespace
+	if humpsChars < len(lines[2]) {
+		humpsChars = len(lines[2])
 	}
 	humps := float64(humpsChars) / 4
 
 	boldedCentral := []sineAnnotation{}
-	for pos, ch := range lines[2] {
+	for pos, ch := range lines[0] {
 		if ch == ' ' {
 			continue
 		}
@@ -345,15 +426,13 @@ func (s singleAnnotatedSine) parseText(lines []string) (reduced []string, elem t
 
 func (s singleAnnotatedSine) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds) {
 
-	// print ^ and v in special way as they represent up and down strokes
-
 	// Print the sine function
 	pdf.SetLineWidth(thinestLW)
 	resolution := 10.0
 	amplitude := 0.04 // XXX
 	width := bnd.right - bnd.left - padding
 	frequency := math.Pi * 2 * s.humps / width
-	yStart := bnd.top
+	yStart := bnd.top + amplitude // because the equation may be negative sending to bnd.top
 	xStart := bnd.left
 	xEnd := bnd.right - padding
 	lastPointX := xStart
@@ -364,18 +443,68 @@ func (s singleAnnotatedSine) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bou
 		}
 		eqY := amplitude * math.Cos(frequency*eqX)
 		if eqX > 0 {
-			pdf.Line(lastPointX, lastPointY, xStart+eqX, yStart+eqY)
+			pdf.Line(lastPointX, lastPointY, xStart+eqX, yStart-eqY) // -eqY because starts from topleft corner
 		}
 		lastPointX = xStart + eqX
 		lastPointY = yStart + eqY
 	}
 
-	// Print the bold central
-	// TODO
+	// print the bold central
+	fontH := amplitude / 2
+	fontPt := GetFontPt(fontH)
+	pdf.SetFont("courier", "B", fontPt)
+	for i, bs := range s.boldedCentral {
+		X := xStart + bs.position
+		Y := yStart + fontH/2 // so the text is centered along the sine axis
+		pdf.Text(X, Y, string(bs.ch))
+	}
 
-	// print the floating
+	// print the characters along the sine curve
+	for i, as := range s.alongSine {
+		if as.ch == ' ' {
+			continue
+		}
 
-	return bounds{bnd.bottom, bnd.left, bnd.bottom, bnd.left}
+		// determine hump position
+		eqY := amplitude * math.Cos(frequency*as.position)
+
+		// character height which extends beyond the sine curve
+		chhbs := amplitude / 4
+
+		// TODO figure out some way to allow for emphasised lines
+		//      maybe doubling the lines up
+		//      maybe using V and A  ???
+		switch as.ch {
+		case 'v':
+			tipX := xStart + as.position
+			tipY := yStart + eqY
+			// 45deg angles to the tip
+			pdf.Line(tipX-chhbs, tipY-chhbs, tipX, tipY)
+			pdf.Line(tipX, tipY, tipX+chhbs, tipY-chhbs)
+		case '^':
+			tipX := xStart + as.position
+			tipY := yStart + eqY
+			// 45deg angles to the tip
+			pdf.Line(tipX-chhbs, tipY+chhbs, tipX, tipY)
+			pdf.Line(tipX, tipY, tipX+chhbs, tipY+chhbs)
+		case '|':
+			x := xStart + as.position
+			pdf.Line(x, yStart-amplitude-chhbs, x, yStart+amplitude+chhbs)
+
+		default:
+			h := 2 * chhbs // font height in inches
+			fontPt := GetFontPt(h)
+			w := GetCourierFontWidth(h) // font width
+
+			// we want the character to be centered about the sine curve
+			pdf.SetFont("courier", "", fontPt)
+			tipX := xStart + as.position
+			tipY := yStart + eqY
+			pdf.Text(tipX-(w/2), tipY+(h/2), string(as.ch))
+		}
+	}
+
+	return bounds{bnd.bottom, bnd.left, bnd.bottom, bnd.left} // XXX
 }
 
 func (s singleAnnotatedSine) getWidth() (isStatic bool, width float64) {
