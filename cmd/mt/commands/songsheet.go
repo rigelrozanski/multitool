@@ -154,9 +154,13 @@ func printHeader(pdf *gofpdf.Fpdf, bnd bounds, hc *headerContent) (reducedBounds
 		thicknesses = thicknessesRev
 	}
 
+	// print title
+	pdf.SetFont("courier", "", 25)
+	pdf.Text(bnd.left+padding, bnd.top+padding, hc.title)
+
 	// print date
 	pdf.SetFont("courier", "", 14)
-	pdf.Text(bnd.right-dateRightOffset, bnd.top+padding, "DATE:")
+	pdf.Text(bnd.right-dateRightOffset, bnd.top+padding, "DATE:"+hc.date)
 
 	// print box
 	pdf.SetLineWidth(thinLW)

@@ -20,11 +20,15 @@ var (
 		Args:  cobra.ExactArgs(1),
 		RunE:  songsheetFilledCmd,
 	}
+
+	printTitleFlag bool
 )
 
 func init() {
 	SongsheetFilledCmd.PersistentFlags().BoolVar(
 		&mirrorStringsOrderFlag, "mirror", false, "mirror string positions")
+	SongsheetFilledCmd.PersistentFlags().BoolVar(
+		&printTitleFlag, "print-title", true, "print the title of the songsheet")
 	RootCmd.AddCommand(SongsheetFilledCmd)
 }
 
@@ -76,7 +80,7 @@ OUTER:
 
 	bnd := bounds{padding, padding, 11, 8.5}
 	if headerFlag {
-		bnd = printHeader(pdf, bnd, hc)
+		bnd = printHeader(pdf, bnd, &hc)
 	}
 	//_ = elem.printPDF(pdf, bnd)
 	//return pdf.OutputFileAndClose(fmt.Sprintf("songsheet_%v.pdf", title))
@@ -85,7 +89,8 @@ OUTER:
 
 func parseHeader(lines []string) (reduced []string, hc headerContent, err error) {
 	if len(lines) < 2 {
-		return lines, hc, fmt.Errorf("improper number of input lines, want at least 2 have %v", len(lines))
+		return lines, hc, fmt.Errorf("improper number of "+
+			"input lines, want at least 2 have %v", len(lines))
 	}
 
 	splt := strings.SplitN(lines[0], "DATE:", 2)
@@ -98,6 +103,9 @@ func parseHeader(lines []string) (reduced []string, hc headerContent, err error)
 	default:
 		panic("")
 	}
+	if !printTitleFlag {
+		hc.title = ""
+	}
 
 	flds := strings.Fields(lines[1])
 	keywords := map[string]string{
@@ -108,7 +116,7 @@ func parseHeader(lines []string) (reduced []string, hc headerContent, err error)
 	}
 	fldIsKeyword := make([]bool, len(flds))
 	for i, fld := range flds {
-		if _, found := keywords[keywords]; found {
+		if _, found := keywords[fld]; found {
 			fldIsKeyword[i] = true
 		}
 	}
@@ -116,7 +124,7 @@ func parseHeader(lines []string) (reduced []string, hc headerContent, err error)
 	for keyword, _ := range keywords {
 		keywordFound := false
 		keywordText := ""
-		for i, fld := range flds {
+		for _, fld := range flds {
 			switch {
 			case !keywordFound && keyword == fld:
 				keywordFound = true
@@ -156,19 +164,22 @@ type tssElement interface {
 // ---------------------
 
 type chordChart struct {
-	chords []Chord
+	chords      []Chord
+	labelFontPt float64
 }
 
 type Chord struct {
-	name   string // must be 1 or 2 characters
-	chords []int  // from thick to thin guitar strings
+	name      string // must be 1 or 2 characters
+	positions []int  // from thick to thin guitar strings
 }
 
 var _ tssElement = chordChart{}
 
 func (c chordChart) parseText(lines []string) (reduced []string, elem tssElement, err error) {
 	if len(lines) < 9 {
-		return lines, elem, fmt.Errorf("improper number of input lines, want at least 9 have %v", len(lines))
+		return lines, elem,
+			fmt.Errorf("improper number of input lines,"+
+				" want at least 9 have %v", len(lines))
 	}
 
 	// checking form, must be in the pattern as such:
@@ -193,6 +204,7 @@ func (c chordChart) parseText(lines []string) (reduced []string, elem tssElement
 		}
 	}
 
+	cOut := chordChart{labelFontPt: 12}
 	// get the chords
 	chordNames := lines[8]
 	for j := 2; j < len(chordNames); j += 3 {
@@ -202,12 +214,12 @@ func (c chordChart) parseText(lines []string) (reduced []string, elem tssElement
 			break
 		}
 
-		c := Chord{name: string(chordNames[j])}
+		newChord := Chord{name: string(chordNames[j])}
 
 		// add the second character to the name (if it exists)
 		if j+1 < len(chordNames) {
 			if chordNames[j+1] != ' ' {
-				c.name += string(chordNames[j+1])
+				newChord.name += string(chordNames[j+1])
 			}
 		}
 
@@ -222,18 +234,116 @@ func (c chordChart) parseText(lines []string) (reduced []string, elem tssElement
 			}
 			num, err := strconv.Atoi(word)
 			if err != nil {
-				return lines, elem, fmt.Errorf("bad number conversion for %v at %v,%v", word, j, i)
+				return lines, elem,
+					fmt.Errorf("bad number conversion for %v at %v,%v",
+						word, j, i)
 			}
-			c.chords = append(c.chords, num)
+			newChord.positions = append(newChord.positions, num)
 		}
+		cOut.chords = append(cOut.chords, newChord)
 	}
 
 	// chop off the first 9 lines
-	return lines[9:], c, nil
+	return lines[9:], cOut, nil
 }
 
 func (c chordChart) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds) {
-	return bounds{bnd.bottom, bnd.left, bnd.bottom, bnd.left} // XXX
+
+	// the top zone of the pillar that shows the guitar string thicknesses
+	thicknessIndicatorMargin := padding / 2
+
+	spacing := padding / 2
+	cactusZoneWidth := 0.0
+	cactusPrickleSpacing := padding
+	cactusZoneWidth = padding // one for the cactus
+
+	noLines := len(thicknesses)
+
+	// print thicknesses
+	var xStart, xEnd, yStart, yEnd float64
+	for i := 0; i < noLines; i++ {
+		pdf.SetLineWidth(thicknesses[i])
+		yStart = bnd.top + cactusZoneWidth + (float64(i) * spacing)
+		yEnd = yStart
+		xStart = bnd.left
+		xEnd = xStart + thicknessIndicatorMargin
+		pdf.Line(xStart, yStart, xEnd, yEnd)
+	}
+
+	// print seperator
+	pdf.SetLineWidth(thinestLW)
+	yStart = bnd.top + cactusZoneWidth
+	yEnd = yStart + float64(noLines-1)*spacing
+	xStart = bnd.left + thicknessIndicatorMargin
+	xEnd = xStart
+	pdf.Line(xStart, yStart, xEnd, yEnd)
+
+	// print pillar lines
+	for i := 0; i < noLines; i++ {
+		pdf.SetLineWidth(thinestLW)
+		yStart = bnd.top + cactusZoneWidth + (float64(i) * spacing)
+		yEnd = yStart
+		xStart = bnd.left + thicknessIndicatorMargin
+		xEnd = bnd.right - padding
+		pdf.Line(xStart, yStart, xEnd, yEnd)
+	}
+
+	// print prickles
+	xStart = bnd.left + thicknessIndicatorMargin + cactusPrickleSpacing/2
+	xEnd = bnd.right - padding
+	chordIndex := 0
+	pdf.SetFont("courier", "", c.labelFontPt)
+	fontHeight := GetFontHeight(c.labelFontPt)
+	labelPadding := fontHeight * 0.1
+	fontWidth := GetCourierFontWidth(fontHeight)
+	for x := xStart; x < xEnd; x += cactusPrickleSpacing {
+		pdf.SetLineWidth(thinestLW)
+		yTopStart := bnd.top
+		yTopEnd := yTopStart + cactusZoneWidth/2
+		yBottomStart := bnd.top + cactusZoneWidth +
+			(float64(noLines-1) * spacing) + cactusZoneWidth/2
+		yBottomEnd := yBottomStart + cactusZoneWidth/2
+
+		pdf.Line(x, yTopStart, x, yTopEnd)
+		pdf.Line(x, yBottomStart, x, yBottomEnd)
+
+		// print labels
+		if chordIndex >= len(c.chords) {
+			continue
+		}
+
+		chd := c.chords[chordIndex]
+		xStartLabel := xStart - fontWidth/2
+		if len(chd.name) == 2 {
+			xStartLabel = xStart - fontWidth
+		}
+		yStartLabel := yBottomEnd + fontHeight + labelPadding
+		pdf.Text(xStartLabel, yStartLabel, chd.name)
+
+		// print positions
+		xStartPositions := xStart - fontWidth/2
+		for i := 0; i < noLines; i++ {
+			yStartPositions := bnd.top + cactusZoneWidth +
+				(float64(i) * spacing) + fontHeight/2
+			pdf.Text(xStartPositions, yStartPositions, strconv.Itoa(chd.positions[i]))
+		}
+
+		chordIndex++
+	}
+
+	elemThickness := 2*cactusZoneWidth + padding +
+		(float64(noLines-1) * spacing) + fontHeight + labelPadding
+	return bounds{bnd.top + elemThickness, bnd.left, bnd.bottom, bnd.right}
+}
+
+func (c chordChart) elemThickness() float64 {
+	spacing := padding / 2
+	cactusZoneWidth := padding
+	noLines := len(thicknesses)
+	fontHeight := GetFontHeight(c.labelFontPt)
+	labelPadding := fontHeight * 0.1
+	return 2*cactusZoneWidth + padding +
+		(float64(noLines-1) * spacing) + fontHeight + labelPadding
 }
 
 func (c chordChart) getWidth() (isStatic bool, width float64) {
@@ -241,7 +351,7 @@ func (c chordChart) getWidth() (isStatic bool, width float64) {
 }
 
 func (c chordChart) getHeight() (isStatic bool, height float64) {
-	return true, 0 // XXX WHAT IS IT
+	return true, c.elemThickness()
 }
 
 // ---------------------
@@ -252,7 +362,8 @@ var _ tssElement = singleSpacing{}
 
 func (s singleSpacing) parseText(lines []string) (reduced []string, elem tssElement, err error) {
 	if len(lines) < 1 {
-		return lines, elem, fmt.Errorf("improper number of input lines, want 1 have %v", len(lines))
+		return lines, elem,
+			fmt.Errorf("improper number of input lines, want 1 have %v", len(lines))
 	}
 	if len(strings.TrimSpace(lines[0])) != 0 {
 		return lines, elem, errors.New("blank line contains content")
@@ -290,7 +401,9 @@ var _ tssElement = singleLineLyrics{}
 
 func (s singleLineLyrics) parseText(lines []string) (reduced []string, elem tssElement, err error) {
 	if len(lines) < 4 {
-		return lines, elem, fmt.Errorf("improper number of input lines, want 1 have %v", len(lines))
+		return lines, elem,
+			fmt.Errorf("improper number of input lines,"+
+				" want 1 have %v", len(lines))
 	}
 
 	sll := singleLineLyrics{}
@@ -334,6 +447,8 @@ func (s singleLineLyrics) parseText(lines []string) (reduced []string, elem tssE
 }
 
 func (s singleLineLyrics) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds) {
+	// XXX
+
 	return bounds{bnd.bottom, bnd.left, bnd.bottom, bnd.left} // XXX
 }
 
@@ -349,6 +464,10 @@ func (s singleLineLyrics) getHeight() (isStatic bool, height float64) {
 
 func GetFontPt(heightInches float64) float64 {
 	return heightInches * 72.281142957923
+}
+
+func GetFontHeight(fontPt float64) (heightInches float64) {
+	return fontPt / 72.281142957923
 }
 
 func GetCourierFontWidth(height float64) float64 {
@@ -380,14 +499,15 @@ func (s singleAnnotatedSine) parseText(lines []string) (reduced []string, elem t
 	// 4)   ^   ^ 1   v  annotations along the sine curve
 
 	if len(lines) < 4 {
-		return lines, elem, fmt.Errorf("improper number of input lines, want 4 have %v", len(lines))
+		return lines, elem, fmt.Errorf("improper number of input lines,"+
+			"want 4 have %v", len(lines))
 	}
 
 	// ensure that the first two lines start with at least 3 sine humps
 	//_   _   _
 	// \_/ \_/ \_/
-	if !(lines[1].HasPrefix("_   _   _") &&
-		lines[2].HasPrefix(" \\_/ \\_/ \\_/")) {
+	if !(strings.HasPrefix(lines[1], "_   _   _") &&
+		strings.HasPrefix(lines[2], " \\_/ \\_/ \\_/")) {
 		return lines, elem, fmt.Errorf("first lines are not sine humps")
 	}
 
@@ -443,7 +563,9 @@ func (s singleAnnotatedSine) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bou
 		}
 		eqY := amplitude * math.Cos(frequency*eqX)
 		if eqX > 0 {
-			pdf.Line(lastPointX, lastPointY, xStart+eqX, yStart-eqY) // -eqY because starts from topleft corner
+
+			// -eqY because starts from topleft corner
+			pdf.Line(lastPointX, lastPointY, xStart+eqX, yStart-eqY)
 		}
 		lastPointX = xStart + eqX
 		lastPointY = yStart + eqY
@@ -453,14 +575,14 @@ func (s singleAnnotatedSine) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bou
 	fontH := amplitude / 2
 	fontPt := GetFontPt(fontH)
 	pdf.SetFont("courier", "B", fontPt)
-	for i, bs := range s.boldedCentral {
+	for _, bs := range s.boldedCentral {
 		X := xStart + bs.position
 		Y := yStart + fontH/2 // so the text is centered along the sine axis
 		pdf.Text(X, Y, string(bs.ch))
 	}
 
 	// print the characters along the sine curve
-	for i, as := range s.alongSine {
+	for _, as := range s.alongSine {
 		if as.ch == ' ' {
 			continue
 		}
