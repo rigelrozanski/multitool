@@ -473,9 +473,68 @@ func (s singleLineLyrics) parseText(lines []string) (reduced []string, elem tssE
 }
 
 func (s singleLineLyrics) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds) {
-	// XXX
 
-	return bounds{bnd.bottom, bnd.left, bnd.bottom, bnd.left} // XXX
+	// print the lyric
+	pdf.SetFont("courier", "B", lyricFontPt)
+	fontH := GetFontHeight(lyricFontPt)
+	fontW := GetCourierFontWidthFromHeight(fontH)
+	xLyric := bnd.left
+	yLyric := bnd.top + fontH
+	pdf.Text(xLyric, yLyric, s.lyrics)
+
+	// print the melodies
+	melodyFontPt := lyricFontPt * 0.7 // the 0.7 makes room for modifiers
+	pdf.SetFont("courier", "B", melodyFontPt)
+	melodyFontH := GetFontHeight(melodyFontPt)
+	melodyFontW := GetCourierFontWidthFromHeight(melodyFontH)
+	melodyHPadding := (fontH - melodyFontH) / 2 // /2 because padded above and below
+	melodyWPadding := (fontW - melodyFontW) / 2 // /2 because padded right and left
+	yNum := yLyric + melodyFontH + melodyHPadding
+	for i, melody := range s.melodies {
+		if melody.blank {
+			continue
+		}
+
+		// print number
+		xNum := xLyric + float64(i)*fontW + melodyWPadding
+		pdf.Text(xNum, yNum, string(melody.num))
+
+		// print modifier
+		switch melody.modifier {
+		case '.':
+			xMod := xNum + melodyFontW/2
+			yMod := xNum + melodyHPadding/2
+			if melody.modifierIsAboveNum {
+				yMod = xNum - melodyFontH - melodyHPadding/2
+			}
+			pdf.Circle(xMod, yMod, melodyHPadding/4, "F")
+		case '-':
+			xModStart := xNum
+			xModEnd := xNum + melodyFontW
+			yMod := xNum + melodyHPadding/2
+			if melody.modifierIsAboveNum {
+				yMod = xNum - melodyFontH - melodyHPadding/2
+			}
+			pdf.SetLineWidth(thinLW)
+			pdf.Line(xModStart, yMod, xModEnd, yMod)
+		case '~':
+			xModStart := xNum
+			xModMid := xNum + melodyFontW/2
+			xModEnd := xNum + melodyFontW
+			yMod := xNum + melodyHPadding/2
+			yModMid := yMod + melodyHPadding/4
+			if melody.modifierIsAboveNum {
+				yMod = xNum - melodyFontH - melodyHPadding/2
+				yModMid = yMod - melodyHPadding/4
+			}
+			pdf.SetLineWidth(thinLW)
+			pdf.Curve(xModStart, yMod, xModMid, yModMid, xModEnd, yMod, "")
+		default:
+			panic(fmt.Errorf("unknown modifier %v", melody.modifier))
+		}
+	}
+
+	return bounds{bnd.top + 2*fontH, bnd.left, bnd.bottom, bnd.right}
 }
 
 // ---------------------
