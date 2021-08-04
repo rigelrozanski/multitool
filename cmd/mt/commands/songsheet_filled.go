@@ -21,14 +21,21 @@ var (
 		RunE:  songsheetFilledCmd,
 	}
 
-	printTitleFlag bool
+	lyricFontPt float64
+
+	printTitleFlag   bool
+	spacingRatioFlag float64
+	numColumnsFlag   uint16
 )
 
 func init() {
 	SongsheetFilledCmd.PersistentFlags().BoolVar(
 		&mirrorStringsOrderFlag, "mirror", false, "mirror string positions")
-	SongsheetFilledCmd.PersistentFlags().BoolVar(
-		&printTitleFlag, "print-title", true, "print the title of the songsheet")
+	SongsheetFilledCmd.PersistentFlags().Uint16Var(
+		&numColumnsFlag, "columns", 2, "number of columns to print song into")
+
+	SongsheetFilledCmd.PersistentFlags().Float64Var(
+		&spacingRatioFlag, "spacing-ratio", 1.0, "ratio of the spacing to the lyric-lines")
 	RootCmd.AddCommand(SongsheetFilledCmd)
 }
 
@@ -45,6 +52,10 @@ func songsheetFilledCmd(cmd *cobra.Command, args []string) error {
 		singleLineLyrics{},
 	}
 
+	if numColumnsFlag < 1 {
+		return errors.New("numColumnsFlag must be greater than 1")
+	}
+
 	quid, err := strconv.Atoi(args[0])
 	if err != nil {
 		return err
@@ -58,6 +69,26 @@ func songsheetFilledCmd(cmd *cobra.Command, args []string) error {
 
 	// get the header
 	lines, hc, err := parseHeader(lines)
+	filename := fmt.Sprintf("songsheet_%v.pdf", hc.title)
+
+	bnd := bounds{padding, padding, 11, 8.5}
+	if !printTitleFlag {
+		hc.title = ""
+	}
+	bnd = printHeader(pdf, bnd, &hc)
+
+	//seperate out remaining bounds into columns
+	bndsColsIndex := 0
+	bndsCols := splitBoundsIntoColumns(bnd, numColumnsFlag)
+	if len(bndsCols) == 0 {
+		panic("no bound columns")
+	}
+
+	//determine lyricFontPt
+	lyricFontPt, err = determineLyricFontPt(lines, bndsCols[0])
+	if err != nil {
+		return err
+	}
 
 	// get contents of songsheet
 	// parse all the elems
@@ -76,15 +107,40 @@ OUTER:
 		return fmt.Errorf("could not parse song at line %v", lines[0])
 	}
 
-	// XXX print the songsheet
-
-	bnd := bounds{padding, padding, 11, 8.5}
-	if headerFlag {
-		bnd = printHeader(pdf, bnd, &hc)
+	// print the songsheet elements
+	//  - use a temp pdf to test whether the borders are exceeded within
+	//    the current column, if so move to the next column
+	for _, el := range parsedElems {
+		pdfTemp := &gofpdf.Fpdf{}
+		*pdfTemp = *pdf
+		bndNew := el.printPDF(pdfTemp, bndsCols[bndsColsIndex])
+		if bndNew.Height() < 0 || bndNew.Width() < 0 {
+			bndsColsIndex++
+			if bndsColsIndex >= len(bndsCols) {
+				return errors.New("song doesn't fit on one sheet (functionality not built yet for multiple sheets)") // TODO
+			}
+			bndsCols[bndsColsIndex] = el.printPDF(pdf, bndsCols[bndsColsIndex])
+		} else {
+			bndsCols[bndsColsIndex] = bndNew
+			*pdf = *pdfTemp
+		}
 	}
-	//_ = elem.printPDF(pdf, bnd)
-	//return pdf.OutputFileAndClose(fmt.Sprintf("songsheet_%v.pdf", title))
-	return nil // XXX
+
+	return pdf.OutputFileAndClose(filename)
+}
+
+func splitBoundsIntoColumns(bnd bounds, numCols uint16) (splitBnds []bounds) {
+	width := (bnd.right - bnd.left) / float64(numCols)
+	for i := uint16(0); i < numCols; i++ {
+		b := bounds{
+			top:    bnd.top,
+			bottom: bnd.bottom,
+			left:   bnd.left + float64(i)*width,
+			right:  bnd.left + float64(i+1)*width,
+		}
+		splitBnds = append(splitBnds, b)
+	}
+	return splitBnds
 }
 
 func parseHeader(lines []string) (reduced []string, hc headerContent, err error) {
@@ -102,9 +158,6 @@ func parseHeader(lines []string) (reduced []string, hc headerContent, err error)
 		hc.date = splt[1]
 	default:
 		panic("")
-	}
-	if !printTitleFlag {
-		hc.title = ""
 	}
 
 	flds := strings.Fields(lines[1])
@@ -156,8 +209,6 @@ func parseHeader(lines []string) (reduced []string, hc headerContent, err error)
 // whole text songsheet element
 type tssElement interface {
 	printPDF(*gofpdf.Fpdf, bounds) (reduced bounds)
-	getWidth() (isStatic bool, width float64)   // width is only valid if isStatic=true
-	getHeight() (isStatic bool, height float64) // height is only valid if isStatic=true
 	parseText(lines []string) (reducedLines []string, elem tssElement, err error)
 }
 
@@ -295,7 +346,7 @@ func (c chordChart) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds) {
 	pdf.SetFont("courier", "", c.labelFontPt)
 	fontHeight := GetFontHeight(c.labelFontPt)
 	labelPadding := fontHeight * 0.1
-	fontWidth := GetCourierFontWidth(fontHeight)
+	fontWidth := GetCourierFontWidthFromHeight(fontHeight)
 	for x := xStart; x < xEnd; x += cactusPrickleSpacing {
 		pdf.SetLineWidth(thinestLW)
 		yTopStart := bnd.top
@@ -336,24 +387,6 @@ func (c chordChart) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds) {
 	return bounds{bnd.top + elemThickness, bnd.left, bnd.bottom, bnd.right}
 }
 
-func (c chordChart) elemThickness() float64 {
-	spacing := padding / 2
-	cactusZoneWidth := padding
-	noLines := len(thicknesses)
-	fontHeight := GetFontHeight(c.labelFontPt)
-	labelPadding := fontHeight * 0.1
-	return 2*cactusZoneWidth + padding +
-		(float64(noLines-1) * spacing) + fontHeight + labelPadding
-}
-
-func (c chordChart) getWidth() (isStatic bool, width float64) {
-	return false, 0
-}
-
-func (c chordChart) getHeight() (isStatic bool, height float64) {
-	return true, c.elemThickness()
-}
-
 // ---------------------
 
 type singleSpacing struct{}
@@ -372,15 +405,8 @@ func (s singleSpacing) parseText(lines []string) (reduced []string, elem tssElem
 }
 
 func (s singleSpacing) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds) {
-	return bounds{bnd.bottom, bnd.left, bnd.bottom, bnd.left} // XXX
-}
-
-func (s singleSpacing) getWidth() (isStatic bool, width float64) {
-	return false, 0
-}
-
-func (s singleSpacing) getHeight() (isStatic bool, height float64) {
-	return true, 0 // XXX WHAT IS IT
+	lineHeight := GetFontHeight(lyricFontPt) * spacingRatioFlag
+	return bounds{bnd.top + lineHeight, bnd.left, bnd.bottom, bnd.right}
 }
 
 // ---------------------
@@ -452,14 +478,6 @@ func (s singleLineLyrics) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds
 	return bounds{bnd.bottom, bnd.left, bnd.bottom, bnd.left} // XXX
 }
 
-func (s singleLineLyrics) getWidth() (isStatic bool, width float64) {
-	return false, 0
-}
-
-func (s singleLineLyrics) getHeight() (isStatic bool, height float64) {
-	return true, 0 // XXX WHAT IS IT
-}
-
 // ---------------------
 
 func GetFontPt(heightInches float64) float64 {
@@ -470,8 +488,12 @@ func GetFontHeight(fontPt float64) (heightInches float64) {
 	return fontPt / 72.281142957923
 }
 
-func GetCourierFontWidth(height float64) float64 {
+func GetCourierFontWidthFromHeight(height float64) float64 {
 	return 0.43 * height
+}
+
+func GetCourierFontHeightFromWidth(width float64) float64 {
+	return width / 0.43
 }
 
 // ---------------------
@@ -488,6 +510,34 @@ type sineAnnotation struct {
 }
 
 var _ tssElement = singleAnnotatedSine{}
+
+func determineLyricFontPt(
+	lines []string, bnd bounds) (fontPt float64, err error) {
+
+	humpsChars := 0
+	for i := 0; i < len(lines)-1; i++ {
+		if strings.HasPrefix(lines[i], "_   _   _") &&
+			strings.HasPrefix(lines[i+1], " \\_/ \\_/ \\_/") {
+
+			humpsChars = len(strings.TrimSpace(lines[1]))
+			secondLineLen := len(strings.TrimSpace(lines[2])) + 1 // +1 for the leading space just trimmed
+			if humpsChars < secondLineLen {
+				humpsChars = secondLineLen
+			}
+			break
+		}
+	}
+	if humpsChars == 0 {
+		return 0, errors.New("could not find a sine curve to determine the lyric font pt")
+	}
+
+	xStart := bnd.left
+	xEnd := bnd.right - padding
+	width := xEnd - xStart
+	fontWidth := width / float64(humpsChars)
+	fontHeight := GetCourierFontHeightFromWidth(fontWidth)
+	return GetFontPt(fontHeight), nil
+}
 
 func (s singleAnnotatedSine) parseText(lines []string) (reduced []string, elem tssElement, err error) {
 
@@ -511,9 +561,10 @@ func (s singleAnnotatedSine) parseText(lines []string) (reduced []string, elem t
 		return lines, elem, fmt.Errorf("first lines are not sine humps")
 	}
 
-	humpsChars := len(lines[1]) // TODO may run into issues here with suffix whitespace
-	if humpsChars < len(lines[2]) {
-		humpsChars = len(lines[2])
+	humpsChars := len(strings.TrimSpace(lines[1]))
+	secondLineLen := len(strings.TrimSpace(lines[2])) + 1 // +1 for the leading space just trimmed
+	if humpsChars < secondLineLen {
+		humpsChars = secondLineLen
 	}
 	humps := float64(humpsChars) / 4
 
@@ -549,12 +600,12 @@ func (s singleAnnotatedSine) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bou
 	// Print the sine function
 	pdf.SetLineWidth(thinestLW)
 	resolution := 10.0
-	amplitude := 0.04 // XXX
-	width := bnd.right - bnd.left - padding
-	frequency := math.Pi * 2 * s.humps / width
-	yStart := bnd.top + amplitude // because the equation may be negative sending to bnd.top
+	amplitude := GetFontHeight(lyricFontPt) / 2
 	xStart := bnd.left
 	xEnd := bnd.right - padding
+	width := xEnd - xStart
+	frequency := math.Pi * 2 * s.humps / width
+	yStart := bnd.top + amplitude // because the equation may be negative sending to bnd.top
 	lastPointX := xStart
 	lastPointY := yStart
 	for eqX := float64(0); true; eqX += resolution {
@@ -582,6 +633,7 @@ func (s singleAnnotatedSine) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bou
 	}
 
 	// print the characters along the sine curve
+	chhbs := amplitude / 4
 	for _, as := range s.alongSine {
 		if as.ch == ' ' {
 			continue
@@ -591,7 +643,6 @@ func (s singleAnnotatedSine) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bou
 		eqY := amplitude * math.Cos(frequency*as.position)
 
 		// character height which extends beyond the sine curve
-		chhbs := amplitude / 4
 
 		// TODO figure out some way to allow for emphasised lines
 		//      maybe doubling the lines up
@@ -616,7 +667,7 @@ func (s singleAnnotatedSine) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bou
 		default:
 			h := 2 * chhbs // font height in inches
 			fontPt := GetFontPt(h)
-			w := GetCourierFontWidth(h) // font width
+			w := GetCourierFontWidthFromHeight(h) // font width
 
 			// we want the character to be centered about the sine curve
 			pdf.SetFont("courier", "", fontPt)
@@ -626,13 +677,6 @@ func (s singleAnnotatedSine) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bou
 		}
 	}
 
-	return bounds{bnd.bottom, bnd.left, bnd.bottom, bnd.left} // XXX
-}
-
-func (s singleAnnotatedSine) getWidth() (isStatic bool, width float64) {
-	return false, 0
-}
-
-func (s singleAnnotatedSine) getHeight() (isStatic bool, height float64) {
-	return true, 0 // XXX WHAT IS IT
+	usedHeight := 2 * (amplitude + chhbs)
+	return bounds{bnd.top + usedHeight, bnd.left, bnd.bottom, bnd.right}
 }
