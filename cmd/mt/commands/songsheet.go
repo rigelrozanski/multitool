@@ -40,6 +40,7 @@ pattern example:
 	}
 	padding   = 0.25
 	thinLW    = 0.01
+	thinishLW = 0.0075
 	thinestLW = 0.001
 
 	headerFlag             bool

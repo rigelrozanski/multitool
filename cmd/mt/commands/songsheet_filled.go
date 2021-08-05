@@ -38,7 +38,7 @@ func init() {
 		&numColumnsFlag, "columns", 2, "number of columns to print song into")
 
 	SongsheetFilledCmd.PersistentFlags().Float64Var(
-		&spacingRatioFlag, "spacing-ratio", 1.0, "ratio of the spacing to the lyric-lines")
+		&spacingRatioFlag, "spacing-ratio", 1.5, "ratio of the spacing to the lyric-lines")
 	RootCmd.AddCommand(SongsheetFilledCmd)
 
 }
@@ -121,17 +121,16 @@ OUTER:
 		pdfTemp := &gofpdf.Fpdf{}
 		*pdfTemp = *pdf
 		bndNew := el.printPDF(pdfTemp, bndsCols[bndsColsIndex])
-		// XXX
-		//if bndNew.Height() < 0 || bndNew.Width() < 0 {
-		//bndsColsIndex++
-		//if bndsColsIndex >= len(bndsCols) {
-		//return errors.New("song doesn't fit on one sheet (functionality not built yet for multiple sheets)") // TODO
-		//}
-		//bndsCols[bndsColsIndex] = el.printPDF(pdf, bndsCols[bndsColsIndex])
-		//} else {
-		bndsCols[bndsColsIndex] = bndNew
-		*pdf = *pdfTemp
-		//}
+		if bndNew.Height() < padding {
+			bndsColsIndex++
+			if bndsColsIndex >= len(bndsCols) {
+				return errors.New("song doesn't fit on one sheet (functionality not built yet for multiple sheets)") // TODO
+			}
+			bndsCols[bndsColsIndex] = el.printPDF(pdf, bndsCols[bndsColsIndex])
+		} else {
+			bndsCols[bndsColsIndex] = bndNew
+			*pdf = *pdfTemp
+		}
 	}
 
 	return pdf.OutputFileAndClose(filename)
@@ -491,73 +490,80 @@ func (s singleLineLyrics) parseText(lines []string) (reduced []string, elem tssE
 func (s singleLineLyrics) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds) {
 
 	// print the lyric
-	pdf.SetFont("courier", "B", lyricFontPt)
+	pdf.SetFont("courier", "", lyricFontPt)
 	fontH := GetFontHeight(lyricFontPt)
 	fontW := GetCourierFontWidthFromHeight(fontH)
-	xLyric := bnd.left
+	xLyricStart := bnd.left - fontW/2 // - because of slight right shift in sine annotations
 	yLyric := bnd.top + fontH
-	pdf.Text(xLyric, yLyric, s.lyrics)
+	// the lyrics could just be printed in one go,
+	// however do to the inaccuracies of determining
+	// font heights and widths (boohoo) it will look
+	// better to just print out each char individually
+	for i, ch := range s.lyrics {
+		xLyric := xLyricStart + float64(i)*fontW
+		pdf.Text(xLyric, yLyric, string(ch))
+	}
 
 	// print the melodies
 	melodyFontPt := lyricFontPt * 0.7 // the 0.7 makes room for modifiers
-	pdf.SetFont("courier", "B", melodyFontPt)
+	pdf.SetFont("courier", "", melodyFontPt)
 	melodyFontH := GetFontHeight(melodyFontPt)
 	melodyFontW := GetCourierFontWidthFromHeight(melodyFontH)
-	melodyHPadding := (fontH - melodyFontH) / 2 // /2 because padded above and below
-	melodyWPadding := (fontW - melodyFontW) / 2 // /2 because padded right and left
-	yNum := yLyric + melodyFontH + melodyHPadding
+	melodyHPadding := (fontH - melodyFontH) / 2     // /2 because padded above and below
+	melodyWPadding := (fontW - melodyFontW) / 2     // /2 because padded right and left
+	yNum := yLyric + melodyFontH + melodyHPadding*4 // *4 means extra padding, need to include this is bounds height calculation
 	for i, melody := range s.melodies {
 		if melody.blank {
 			continue
 		}
 
 		// print number
-		xNum := xLyric + float64(i)*fontW + melodyWPadding
+		xNum := xLyricStart + float64(i)*fontW + melodyWPadding
 		pdf.Text(xNum, yNum, string(melody.num))
 
 		// print modifier
 		switch melody.modifier {
 		case '.':
 			xMod := xNum + melodyFontW/2
-			yMod := xNum + melodyHPadding/2
+			yMod := yNum + melodyHPadding*1.5
 			if melody.modifierIsAboveNum {
-				yMod = xNum - melodyFontH - melodyHPadding/2
+				yMod = yNum - melodyFontH - melodyHPadding/1.5
 			}
-			pdf.Circle(xMod, yMod, melodyHPadding/4, "F")
+			pdf.Circle(xMod, yMod, melodyHPadding/1.5, "F")
 		case '-':
 			xModStart := xNum
 			xModEnd := xNum + melodyFontW
-			yMod := xNum + melodyHPadding/2
+			yMod := yNum + melodyHPadding
 			if melody.modifierIsAboveNum {
-				yMod = xNum - melodyFontH - melodyHPadding/2
+				yMod = yNum - melodyFontH - melodyHPadding
 			}
-			pdf.SetLineWidth(thinLW)
+			pdf.SetLineWidth(thinishLW)
 			pdf.Line(xModStart, yMod, xModEnd, yMod)
 		case '~':
 			xModStart := xNum
 			xModMid := xNum + melodyFontW/2
 			xModEnd := xNum + melodyFontW
-			yMod := xNum + melodyHPadding/2
-			yModMid := yMod + melodyHPadding/4
+			yMod := yNum + melodyHPadding/2
+			yModMid := yMod + melodyHPadding*3
 			if melody.modifierIsAboveNum {
-				yMod = xNum - melodyFontH - melodyHPadding/2
-				yModMid = yMod - melodyHPadding/4
+				yMod = yNum - melodyFontH - melodyHPadding/2
+				yModMid = yMod - melodyHPadding*3
 			}
-			pdf.SetLineWidth(thinLW)
+			pdf.SetLineWidth(thinishLW)
 			pdf.Curve(xModStart, yMod, xModMid, yModMid, xModEnd, yMod, "")
 		default:
 			panic(fmt.Errorf("unknown modifier %v", melody.modifier))
 		}
 	}
 
-	return bounds{bnd.top + 2*fontH, bnd.left, bnd.bottom, bnd.right}
+	return bounds{bnd.top + 2*fontH + 3*melodyHPadding, bnd.left, bnd.bottom, bnd.right}
 }
 
 // ---------------------
 
 const ( // empirically determined
-	ptToHeight    = 110
-	widthToHeight = 0.9
+	ptToHeight    = 110  //72
+	widthToHeight = 0.93 //
 )
 
 func GetFontPt(heightInches float64) float64 {
@@ -599,8 +605,8 @@ func determineLyricFontPt(
 		if strings.HasPrefix(lines[i], "_   _   _") &&
 			strings.HasPrefix(lines[i+1], " \\_/ \\_/ \\_/") {
 
-			humpsChars = len(strings.TrimSpace(lines[1]))
-			secondLineLen := len(strings.TrimSpace(lines[2])) + 1 // +1 for the leading space just trimmed
+			humpsChars = len(strings.TrimSpace(lines[i]))
+			secondLineLen := len(strings.TrimSpace(lines[i+1])) + 1 // +1 for the leading space just trimmed
 			if humpsChars < secondLineLen {
 				humpsChars = secondLineLen
 			}
@@ -647,7 +653,6 @@ func (s singleAnnotatedSine) parseText(lines []string) (reduced []string, elem t
 		humpsChars = secondLineLen
 	}
 	humps := float64(humpsChars) / 4
-	fmt.Printf("debug humps: %v\n", humps)
 
 	boldedCentral := []sineAnnotation{}
 	for pos, ch := range lines[0] {
@@ -681,12 +686,9 @@ func (s singleAnnotatedSine) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bou
 	// Print the sine function
 	pdf.SetLineWidth(thinLW)
 	resolution := 0.01
-	amplitude := GetFontHeight(lyricFontPt) / 10
-	fmt.Printf("debug amplitude: %v\n", amplitude)
+	amplitude := GetFontHeight(lyricFontPt)
 	xStart := bnd.left
-	fmt.Printf("debug xStart: %v\n", xStart)
 	xEnd := bnd.right - padding
-	fmt.Printf("debug xEnd: %v\n", xEnd)
 	width := xEnd - xStart
 	frequency := math.Pi * 2 * s.humps / width
 	yStart := bnd.top + amplitude // because the equation may be negative sending to bnd.top
@@ -709,24 +711,27 @@ func (s singleAnnotatedSine) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bou
 	}
 
 	// print the bold central
-	fontH := amplitude / 2
-	fontPt := GetFontPt(fontH)
+	fontH := GetFontHeight(lyricFontPt)
+	fontW := GetCourierFontWidthFromHeight(fontH)
+	fontPt := lyricFontPt
 	pdf.SetFont("courier", "B", fontPt)
 	for _, bs := range s.boldedCentral {
-		X := xStart + bs.position
+		X := xStart + (bs.position/s.humps)*width - fontW/2
 		Y := yStart + fontH/2 // so the text is centered along the sine axis
 		pdf.Text(X, Y, string(bs.ch))
 	}
 
 	// print the characters along the sine curve
-	chhbs := amplitude / 4
+	pdf.SetLineWidth(thinishLW)
+	chhbs := amplitude / 3
 	for _, as := range s.alongSine {
 		if as.ch == ' ' {
 			continue
 		}
 
 		// determine hump position
-		eqY := amplitude * math.Cos(frequency*as.position)
+		eqX := (as.position / s.humps) * width
+		eqY := amplitude * math.Cos(frequency*eqX)
 
 		// character height which extends beyond the sine curve
 
@@ -735,19 +740,29 @@ func (s singleAnnotatedSine) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bou
 		//      maybe using V and A  ???
 		switch as.ch {
 		case 'v':
-			tipX := xStart + as.position
-			tipY := yStart + eqY
+			tipX := xStart + eqX
+			tipY := yStart - eqY
+			dec := (as.position) - math.Trunc(as.position)
+			if dec == 0 || dec == 0.5 {
+				tipY -= chhbs / 2
+			}
 			// 45deg angles to the tip
 			pdf.Line(tipX-chhbs, tipY-chhbs, tipX, tipY)
 			pdf.Line(tipX, tipY, tipX+chhbs, tipY-chhbs)
+			//pdf.Line(tipX, tipY, tipX, tipY-chhbs*math.Sqrt(2))
 		case '^':
-			tipX := xStart + as.position
-			tipY := yStart + eqY
+			tipX := xStart + eqX
+			tipY := yStart - eqY
+			dec := (as.position) - math.Trunc(as.position)
+			if dec == 0 || dec == 0.5 {
+				tipY += chhbs / 2
+			}
 			// 45deg angles to the tip
 			pdf.Line(tipX-chhbs, tipY+chhbs, tipX, tipY)
 			pdf.Line(tipX, tipY, tipX+chhbs, tipY+chhbs)
+			//pdf.Line(tipX, tipY, tipX, tipY+chhbs*math.Sqrt(2))
 		case '|':
-			x := xStart + as.position
+			x := xStart + eqX
 			pdf.Line(x, yStart-amplitude-chhbs, x, yStart+amplitude+chhbs)
 
 		default:
@@ -757,12 +772,12 @@ func (s singleAnnotatedSine) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bou
 
 			// we want the character to be centered about the sine curve
 			pdf.SetFont("courier", "", fontPt)
-			tipX := xStart + as.position
-			tipY := yStart + eqY
+			tipX := xStart + eqX
+			tipY := yStart - eqY
 			pdf.Text(tipX-(w/2), tipY+(h/2), string(as.ch))
 		}
 	}
 
-	usedHeight := 2 * (amplitude + chhbs)
+	usedHeight := 2 * (amplitude + chhbs*math.Sqrt(2) + chhbs/2)
 	return bounds{bnd.top + usedHeight, bnd.left, bnd.bottom, bnd.right}
 }
