@@ -183,15 +183,10 @@ func parseHeader(lines []string) (reduced []string, hc headerContent, err error)
 	}
 
 	for keyword, _ := range keywords {
-		fmt.Printf("debug looking for keyword: %v\n", keyword)
 		keywordFound := false
 		keywordText := ""
 	FLDSLOOP:
 		for i, fld := range flds {
-			fmt.Printf("debug fld: %v\n", fld)
-			fmt.Printf("debug keywordFound: %v\n", keywordFound)
-			fmt.Printf("debug i: %v\n", i)
-			fmt.Printf("debug fldIsKeyword[i]: %v\n", fldIsKeyword[i])
 			switch {
 			case !keywordFound && keyword == fld:
 				keywordFound = true
@@ -208,7 +203,6 @@ func parseHeader(lines []string) (reduced []string, hc headerContent, err error)
 			keywords[keyword] = keywordText
 		}
 	}
-	fmt.Printf("debug keywords: %+v\n", keywords)
 
 	// assign keywords to the header content
 	hc.tuning = keywords["TUNING:"]
@@ -653,6 +647,7 @@ func (s singleAnnotatedSine) parseText(lines []string) (reduced []string, elem t
 		humpsChars = secondLineLen
 	}
 	humps := float64(humpsChars) / 4
+	fmt.Printf("debug humps: %v\n", humps)
 
 	boldedCentral := []sineAnnotation{}
 	for pos, ch := range lines[0] {
@@ -684,28 +679,33 @@ func (s singleAnnotatedSine) parseText(lines []string) (reduced []string, elem t
 func (s singleAnnotatedSine) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds) {
 
 	// Print the sine function
-	pdf.SetLineWidth(thinestLW)
-	resolution := 10.0
-	amplitude := GetFontHeight(lyricFontPt) / 2
+	pdf.SetLineWidth(thinLW)
+	resolution := 0.01
+	amplitude := GetFontHeight(lyricFontPt) / 10
+	fmt.Printf("debug amplitude: %v\n", amplitude)
 	xStart := bnd.left
+	fmt.Printf("debug xStart: %v\n", xStart)
 	xEnd := bnd.right - padding
+	fmt.Printf("debug xEnd: %v\n", xEnd)
 	width := xEnd - xStart
 	frequency := math.Pi * 2 * s.humps / width
 	yStart := bnd.top + amplitude // because the equation may be negative sending to bnd.top
 	lastPointX := xStart
 	lastPointY := yStart
+	pdf.SetLineWidth(thinestLW)
 	for eqX := float64(0); true; eqX += resolution {
 		if xStart+eqX > xEnd {
 			break
 		}
 		eqY := amplitude * math.Cos(frequency*eqX)
+
 		if eqX > 0 {
 
 			// -eqY because starts from topleft corner
 			pdf.Line(lastPointX, lastPointY, xStart+eqX, yStart-eqY)
 		}
 		lastPointX = xStart + eqX
-		lastPointY = yStart + eqY
+		lastPointY = yStart - eqY
 	}
 
 	// print the bold central
