@@ -118,22 +118,19 @@ OUTER:
 	}
 
 	// print the songsheet elements
-	//  - use a temp pdf to test whether the borders are exceeded within
+	//  - use a dummy pdf to test whether the borders are exceeded within
 	//    the current column, if so move to the next column
 	for _, el := range parsedElems {
-		pdfTemp := &gofpdf.Fpdf{}
-		*pdfTemp = *pdf
-		bndNew := el.printPDF(pdfTemp, bndsCols[bndsColsIndex])
+		dummy := dummyPdf{}
+		bndNew := el.printPDF(dummy, bndsCols[bndsColsIndex])
 		if bndNew.Height() < padding {
 			bndsColsIndex++
 			if bndsColsIndex >= len(bndsCols) {
-				return errors.New("song doesn't fit on one sheet (functionality not built yet for multiple sheets)") // TODO
+				return errors.New("song doesn't fit on one sheet " +
+					"(functionality not built yet for multiple sheets)") // TODO
 			}
-			bndsCols[bndsColsIndex] = el.printPDF(pdf, bndsCols[bndsColsIndex])
-		} else {
-			bndsCols[bndsColsIndex] = bndNew
-			*pdf = *pdfTemp
 		}
+		bndsCols[bndsColsIndex] = el.printPDF(pdf, bndsCols[bndsColsIndex])
 	}
 
 	return pdf.OutputFileAndClose(filename)
@@ -217,9 +214,32 @@ func parseHeader(lines []string) (reduced []string, hc headerContent, err error)
 
 // ---------------------
 
+type Pdf interface {
+	SetLineWidth(width float64)
+	Line(x1, y1, x2, y2 float64)
+	SetFont(familyStr, styleStr string, size float64)
+	Text(x, y float64, txtStr string)
+	Circle(x, y, r float64, styleStr string)
+	Curve(x0, y0, cx, cy, x1, y1 float64, styleStr string)
+}
+
+// dummyPdf fulfills the interface Pdf (DNETL)
+type dummyPdf struct{}
+
+var _ Pdf = dummyPdf{}
+
+func (d dummyPdf) SetLineWidth(width float64)                            {}
+func (d dummyPdf) Line(x1, y1, x2, y2 float64)                           {}
+func (d dummyPdf) SetFont(familyStr, styleStr string, size float64)      {}
+func (d dummyPdf) Text(x, y float64, txtStr string)                      {}
+func (d dummyPdf) Circle(x, y, r float64, styleStr string)               {}
+func (d dummyPdf) Curve(x0, y0, cx, cy, x1, y1 float64, styleStr string) {}
+
+// ---------------------
+
 // whole text songsheet element
 type tssElement interface {
-	printPDF(*gofpdf.Fpdf, bounds) (reduced bounds)
+	printPDF(Pdf, bounds) (reduced bounds)
 	parseText(lines []string) (reducedLines []string, elem tssElement, err error)
 }
 
@@ -313,7 +333,7 @@ func (c chordChart) parseText(lines []string) (reduced []string, elem tssElement
 	return lines[9:], cOut, nil
 }
 
-func (c chordChart) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds) {
+func (c chordChart) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 
 	usedHeight := 0.0
 
@@ -424,7 +444,7 @@ func (s singleSpacing) parseText(lines []string) (reduced []string, elem tssElem
 	return lines[1:], singleSpacing{}, nil
 }
 
-func (s singleSpacing) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds) {
+func (s singleSpacing) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 	lineHeight := GetFontHeight(lyricFontPt) * spacingRatioFlag
 	return bounds{bnd.top + lineHeight, bnd.left, bnd.bottom, bnd.right}
 }
@@ -492,7 +512,7 @@ func (s singleLineLyrics) parseText(lines []string) (reduced []string, elem tssE
 	return lines[4:], sll, nil
 }
 
-func (s singleLineLyrics) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds) {
+func (s singleLineLyrics) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 
 	// accumulate all the used height as it's used
 	usedHeight := 0.0
@@ -694,7 +714,7 @@ func (s singleAnnotatedSine) parseText(lines []string) (reduced []string, elem t
 	return lines[4:], sas, nil
 }
 
-func (s singleAnnotatedSine) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds) {
+func (s singleAnnotatedSine) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 
 	// Print the sine function
 	pdf.SetLineWidth(thinLW)
