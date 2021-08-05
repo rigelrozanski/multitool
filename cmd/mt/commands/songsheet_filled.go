@@ -24,9 +24,10 @@ var (
 
 	lyricFontPt float64
 
-	printTitleFlag   bool
-	spacingRatioFlag float64
-	numColumnsFlag   uint16
+	printTitleFlag         bool
+	spacingRatioFlag       float64
+	sineAmplitudeRatioFlag float64
+	numColumnsFlag         uint16
 )
 
 func init() {
@@ -39,6 +40,8 @@ func init() {
 
 	SongsheetFilledCmd.PersistentFlags().Float64Var(
 		&spacingRatioFlag, "spacing-ratio", 1.5, "ratio of the spacing to the lyric-lines")
+	SongsheetFilledCmd.PersistentFlags().Float64Var(
+		&sineAmplitudeRatioFlag, "amp-ratio", 0.6, "ratio of amplitude of the sine curve to the lyric text")
 	RootCmd.AddCommand(SongsheetFilledCmd)
 
 }
@@ -312,6 +315,8 @@ func (c chordChart) parseText(lines []string) (reduced []string, elem tssElement
 
 func (c chordChart) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds) {
 
+	usedHeight := 0.0
+
 	// the top zone of the pillar that shows the guitar string thicknesses
 	thicknessIndicatorMargin := padding / 2
 
@@ -323,20 +328,20 @@ func (c chordChart) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds) {
 	noLines := len(thicknesses)
 
 	// print thicknesses
-	var xStart, xEnd, yStart, yEnd float64
+	var xStart, xEnd, y float64
 	for i := 0; i < noLines; i++ {
 		pdf.SetLineWidth(thicknesses[i])
-		yStart = bnd.top + cactusZoneWidth + (float64(i) * spacing)
-		yEnd = yStart
+		y = bnd.top + cactusZoneWidth + (float64(i) * spacing)
 		xStart = bnd.left
 		xEnd = xStart + thicknessIndicatorMargin
-		pdf.Line(xStart, yStart, xEnd, yEnd)
+		pdf.Line(xStart, y, xEnd, y)
 	}
+	usedHeight += cactusZoneWidth + float64(noLines)*spacing
 
 	// print seperator
 	pdf.SetLineWidth(thinestLW)
-	yStart = bnd.top + cactusZoneWidth
-	yEnd = yStart + float64(noLines-1)*spacing
+	yStart := bnd.top + cactusZoneWidth
+	yEnd := yStart + float64(noLines-1)*spacing
 	xStart = bnd.left + thicknessIndicatorMargin
 	xEnd = xStart
 	pdf.Line(xStart, yStart, xEnd, yEnd)
@@ -344,11 +349,10 @@ func (c chordChart) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds) {
 	// print pillar lines
 	for i := 0; i < noLines; i++ {
 		pdf.SetLineWidth(thinestLW)
-		yStart = bnd.top + cactusZoneWidth + (float64(i) * spacing)
-		yEnd = yStart
+		y = bnd.top + cactusZoneWidth + (float64(i) * spacing)
 		xStart = bnd.left + thicknessIndicatorMargin
 		xEnd = bnd.right - padding
-		pdf.Line(xStart, yStart, xEnd, yEnd)
+		pdf.Line(xStart, y, xEnd, y)
 	}
 
 	// print prickles
@@ -396,10 +400,11 @@ func (c chordChart) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds) {
 
 		chordIndex++
 	}
+	// for the lower prickles and labels
+	// (upper prickles already accounted for in previous usedHeight accumulation)
+	usedHeight += cactusZoneWidth + fontHeight + labelPadding
 
-	elemThickness := 2*cactusZoneWidth + padding +
-		(float64(noLines-1) * spacing) + fontHeight + labelPadding
-	return bounds{bnd.top + elemThickness, bnd.left, bnd.bottom, bnd.right}
+	return bounds{bnd.top + usedHeight, bnd.left, bnd.bottom, bnd.right}
 }
 
 // ---------------------
@@ -489,12 +494,16 @@ func (s singleLineLyrics) parseText(lines []string) (reduced []string, elem tssE
 
 func (s singleLineLyrics) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds) {
 
+	// accumulate all the used height as it's used
+	usedHeight := 0.0
+
 	// print the lyric
 	pdf.SetFont("courier", "", lyricFontPt)
 	fontH := GetFontHeight(lyricFontPt)
 	fontW := GetCourierFontWidthFromHeight(fontH)
 	xLyricStart := bnd.left - fontW/2 // - because of slight right shift in sine annotations
-	yLyric := bnd.top + fontH
+	yLyric := bnd.top + 1.3*fontH     // 3/2 because of tall characters extending beyond height calculation
+
 	// the lyrics could just be printed in one go,
 	// however do to the inaccuracies of determining
 	// font heights and widths (boohoo) it will look
@@ -503,15 +512,17 @@ func (s singleLineLyrics) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds
 		xLyric := xLyricStart + float64(i)*fontW
 		pdf.Text(xLyric, yLyric, string(ch))
 	}
+	usedHeight += 1.3 * fontH
 
 	// print the melodies
 	melodyFontPt := lyricFontPt * 0.7 // the 0.7 makes room for modifiers
 	pdf.SetFont("courier", "", melodyFontPt)
 	melodyFontH := GetFontHeight(melodyFontPt)
 	melodyFontW := GetCourierFontWidthFromHeight(melodyFontH)
-	melodyHPadding := (fontH - melodyFontH) / 2     // /2 because padded above and below
-	melodyWPadding := (fontW - melodyFontW) / 2     // /2 because padded right and left
-	yNum := yLyric + melodyFontH + melodyHPadding*4 // *4 means extra padding, need to include this is bounds height calculation
+	melodyHPadding := (fontH - melodyFontH) / 2 // /2 because padded above and below
+	melodyWPadding := (fontW - melodyFontW) / 2 // /2 because padded right and left
+	yNum := yLyric + melodyFontH + melodyHPadding*4
+	usedHeight += melodyFontH + melodyHPadding*4
 	for i, melody := range s.melodies {
 		if melody.blank {
 			continue
@@ -555,8 +566,10 @@ func (s singleLineLyrics) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds
 			panic(fmt.Errorf("unknown modifier %v", melody.modifier))
 		}
 	}
+	// the greatest use of height is from the midpoint of the ~ modifier
+	usedHeight += melodyHPadding/2 + melodyHPadding*3
 
-	return bounds{bnd.top + 2*fontH + 3*melodyHPadding, bnd.left, bnd.bottom, bnd.right}
+	return bounds{bnd.top + usedHeight, bnd.left, bnd.bottom, bnd.right}
 }
 
 // ---------------------
@@ -686,12 +699,19 @@ func (s singleAnnotatedSine) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bou
 	// Print the sine function
 	pdf.SetLineWidth(thinLW)
 	resolution := 0.01
-	amplitude := GetFontHeight(lyricFontPt)
+	lfh := GetFontHeight(lyricFontPt)
+	amplitude := sineAmplitudeRatioFlag * lfh
+	chhbs := lfh / 3 // char height beyond sine
+
+	usedHeight := 2 * ( // times 2 because both sides of the sine
+	amplitude +         // for the sine curve
+		chhbs) // for the text extending out of the sine curve
+
 	xStart := bnd.left
 	xEnd := bnd.right - padding
 	width := xEnd - xStart
 	frequency := math.Pi * 2 * s.humps / width
-	yStart := bnd.top + amplitude // because the equation may be negative sending to bnd.top
+	yStart := bnd.top + usedHeight/2
 	lastPointX := xStart
 	lastPointY := yStart
 	pdf.SetLineWidth(thinestLW)
@@ -711,9 +731,12 @@ func (s singleAnnotatedSine) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bou
 	}
 
 	// print the bold central
-	fontH := GetFontHeight(lyricFontPt)
+
+	// (max multiplier would be 2 as the text is
+	// centered between the positive and neg amplitude)
+	fontH := amplitude * 1.5
 	fontW := GetCourierFontWidthFromHeight(fontH)
-	fontPt := lyricFontPt
+	fontPt := GetFontPt(fontH)
 	pdf.SetFont("courier", "B", fontPt)
 	for _, bs := range s.boldedCentral {
 		X := xStart + (bs.position/s.humps)*width - fontW/2
@@ -723,7 +746,6 @@ func (s singleAnnotatedSine) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bou
 
 	// print the characters along the sine curve
 	pdf.SetLineWidth(thinishLW)
-	chhbs := amplitude / 3
 	for _, as := range s.alongSine {
 		if as.ch == ' ' {
 			continue
@@ -778,6 +800,5 @@ func (s singleAnnotatedSine) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bou
 		}
 	}
 
-	usedHeight := 2 * (amplitude + chhbs*math.Sqrt(2) + chhbs/2)
 	return bounds{bnd.top + usedHeight, bnd.left, bnd.bottom, bnd.right}
 }
