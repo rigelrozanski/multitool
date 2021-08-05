@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"strconv"
 	"strings"
 	"unicode"
@@ -29,6 +30,8 @@ var (
 )
 
 func init() {
+	quac.Initialize(os.ExpandEnv("$HOME/.thranch_config"))
+
 	SongsheetFilledCmd.PersistentFlags().BoolVar(
 		&mirrorStringsOrderFlag, "mirror", false, "mirror string positions")
 	SongsheetFilledCmd.PersistentFlags().Uint16Var(
@@ -37,6 +40,7 @@ func init() {
 	SongsheetFilledCmd.PersistentFlags().Float64Var(
 		&spacingRatioFlag, "spacing-ratio", 1.0, "ratio of the spacing to the lyric-lines")
 	RootCmd.AddCommand(SongsheetFilledCmd)
+
 }
 
 func songsheetFilledCmd(cmd *cobra.Command, args []string) error {
@@ -72,7 +76,7 @@ func songsheetFilledCmd(cmd *cobra.Command, args []string) error {
 	filename := fmt.Sprintf("songsheet_%v.pdf", hc.title)
 
 	bnd := bounds{padding, padding, 11, 8.5}
-	if !printTitleFlag {
+	if printTitleFlag {
 		hc.title = ""
 	}
 	bnd = printHeader(pdf, bnd, &hc)
@@ -96,15 +100,18 @@ func songsheetFilledCmd(cmd *cobra.Command, args []string) error {
 
 OUTER:
 	if len(lines) > 0 {
+		allErrs := []string{}
 		for _, elem := range elemKinds {
 			reduced, newElem, err := elem.parseText(lines)
 			if err == nil {
 				lines = reduced
 				parsedElems = append(parsedElems, newElem)
 				goto OUTER
+			} else {
+				allErrs = append(allErrs, err.Error())
 			}
 		}
-		return fmt.Errorf("could not parse song at line %v", lines[0])
+		return fmt.Errorf("could not parse song at line %+v\n all errors%+v\n", lines, allErrs)
 	}
 
 	// print the songsheet elements
@@ -114,16 +121,17 @@ OUTER:
 		pdfTemp := &gofpdf.Fpdf{}
 		*pdfTemp = *pdf
 		bndNew := el.printPDF(pdfTemp, bndsCols[bndsColsIndex])
-		if bndNew.Height() < 0 || bndNew.Width() < 0 {
-			bndsColsIndex++
-			if bndsColsIndex >= len(bndsCols) {
-				return errors.New("song doesn't fit on one sheet (functionality not built yet for multiple sheets)") // TODO
-			}
-			bndsCols[bndsColsIndex] = el.printPDF(pdf, bndsCols[bndsColsIndex])
-		} else {
-			bndsCols[bndsColsIndex] = bndNew
-			*pdf = *pdfTemp
-		}
+		// XXX
+		//if bndNew.Height() < 0 || bndNew.Width() < 0 {
+		//bndsColsIndex++
+		//if bndsColsIndex >= len(bndsCols) {
+		//return errors.New("song doesn't fit on one sheet (functionality not built yet for multiple sheets)") // TODO
+		//}
+		//bndsCols[bndsColsIndex] = el.printPDF(pdf, bndsCols[bndsColsIndex])
+		//} else {
+		bndsCols[bndsColsIndex] = bndNew
+		*pdf = *pdfTemp
+		//}
 	}
 
 	return pdf.OutputFileAndClose(filename)
@@ -175,25 +183,32 @@ func parseHeader(lines []string) (reduced []string, hc headerContent, err error)
 	}
 
 	for keyword, _ := range keywords {
+		fmt.Printf("debug looking for keyword: %v\n", keyword)
 		keywordFound := false
 		keywordText := ""
-		for _, fld := range flds {
+	FLDSLOOP:
+		for i, fld := range flds {
+			fmt.Printf("debug fld: %v\n", fld)
+			fmt.Printf("debug keywordFound: %v\n", keywordFound)
+			fmt.Printf("debug i: %v\n", i)
+			fmt.Printf("debug fldIsKeyword[i]: %v\n", fldIsKeyword[i])
 			switch {
 			case !keywordFound && keyword == fld:
 				keywordFound = true
 				continue
-			case keywordFound && keyword == fld:
-				break
-			case keywordFound && keyword != fld && keywordText == "":
-				keywordText = keyword
-			case keywordFound && keyword != fld && keywordText != "":
-				keywordText += " " + keyword
+			case keywordFound && fldIsKeyword[i]:
+				break FLDSLOOP
+			case keywordFound && !fldIsKeyword[i] && keywordText == "":
+				keywordText = fld
+			case keywordFound && !fldIsKeyword[i] && keywordText != "":
+				keywordText += " " + fld
 			}
 		}
 		if keywordFound {
 			keywords[keyword] = keywordText
 		}
 	}
+	fmt.Printf("debug keywords: %+v\n", keywords)
 
 	// assign keywords to the header content
 	hc.tuning = keywords["TUNING:"]
@@ -215,8 +230,9 @@ type tssElement interface {
 // ---------------------
 
 type chordChart struct {
-	chords      []Chord
-	labelFontPt float64
+	chords          []Chord
+	labelFontPt     float64
+	positionsFontPt float64
 }
 
 type Chord struct {
@@ -255,7 +271,10 @@ func (c chordChart) parseText(lines []string) (reduced []string, elem tssElement
 		}
 	}
 
-	cOut := chordChart{labelFontPt: 12}
+	cOut := chordChart{
+		labelFontPt:     12,
+		positionsFontPt: 10,
+	}
 	// get the chords
 	chordNames := lines[8]
 	for j := 2; j < len(chordNames); j += 3 {
@@ -359,24 +378,27 @@ func (c chordChart) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds) {
 		pdf.Line(x, yBottomStart, x, yBottomEnd)
 
 		// print labels
+		pdf.SetFont("courier", "", c.labelFontPt)
 		if chordIndex >= len(c.chords) {
 			continue
 		}
 
 		chd := c.chords[chordIndex]
-		xStartLabel := xStart - fontWidth/2
+		xLabel := x - fontWidth/2
 		if len(chd.name) == 2 {
-			xStartLabel = xStart - fontWidth
+			xLabel = x - fontWidth
 		}
-		yStartLabel := yBottomEnd + fontHeight + labelPadding
-		pdf.Text(xStartLabel, yStartLabel, chd.name)
+		yLabel := yBottomEnd + fontHeight + labelPadding
+		pdf.Text(xLabel, yLabel, chd.name)
 
 		// print positions
-		xStartPositions := xStart - fontWidth/2
+		pdf.SetFont("courier", "", c.positionsFontPt)
+		posFontH := GetFontHeight(c.positionsFontPt)
+		xPositions := x - fontWidth/2 // maybe incorrect, but looks better
 		for i := 0; i < noLines; i++ {
-			yStartPositions := bnd.top + cactusZoneWidth +
-				(float64(i) * spacing) + fontHeight/2
-			pdf.Text(xStartPositions, yStartPositions, strconv.Itoa(chd.positions[i]))
+			yPositions := bnd.top + cactusZoneWidth +
+				(float64(i) * spacing) + posFontH/2
+			pdf.Text(xPositions, yPositions, strconv.Itoa(chd.positions[i]))
 		}
 
 		chordIndex++
@@ -539,20 +561,25 @@ func (s singleLineLyrics) printPDF(pdf *gofpdf.Fpdf, bnd bounds) (reduced bounds
 
 // ---------------------
 
+const ( // empirically determined
+	ptToHeight    = 110
+	widthToHeight = 0.9
+)
+
 func GetFontPt(heightInches float64) float64 {
-	return heightInches * 72.281142957923
+	return heightInches * ptToHeight
 }
 
 func GetFontHeight(fontPt float64) (heightInches float64) {
-	return fontPt / 72.281142957923
+	return fontPt / ptToHeight
 }
 
 func GetCourierFontWidthFromHeight(height float64) float64 {
-	return 0.43 * height
+	return widthToHeight * height
 }
 
 func GetCourierFontHeightFromWidth(width float64) float64 {
-	return width / 0.43
+	return width / widthToHeight
 }
 
 // ---------------------

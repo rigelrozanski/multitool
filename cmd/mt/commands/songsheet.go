@@ -138,7 +138,7 @@ type headerContent struct {
 }
 
 func printHeader(pdf *gofpdf.Fpdf, bnd bounds, hc *headerContent) (reducedBounds bounds) {
-	dateRightOffset := 2.0
+	dateRightOffset := 2.3
 	totalHeaderHeight := 1.0
 	boxHeight := 0.25
 	boxTextMargin := 0.06
@@ -155,8 +155,8 @@ func printHeader(pdf *gofpdf.Fpdf, bnd bounds, hc *headerContent) (reducedBounds
 	}
 
 	// print title
-	pdf.SetFont("courier", "", 25)
-	pdf.Text(bnd.left+padding, bnd.top+padding, hc.title)
+	pdf.SetFont("courier", "", 30)
+	pdf.Text(bnd.left, bnd.top+1.5*padding, hc.title)
 
 	// print date
 	pdf.SetFont("courier", "", 14)
@@ -180,11 +180,24 @@ func printHeader(pdf *gofpdf.Fpdf, bnd bounds, hc *headerContent) (reducedBounds
 		}
 	}
 
+	// determine extra space available
+	pdf.SetFont("courier", "", 14)
+	charH := GetFontHeight(14)
+	charW := GetCourierFontWidthFromHeight(charH)
+	numChars := 0
+	for _, c := range conts {
+		numChars += len(c)
+	}
+	usedWidth := charW * float64(numChars)
+
 	xTextAreaStart := bnd.left + boxTextMargin
 	xTextAreaEnd := bnd.right - padding - boxTextMargin
-	xTextIncr := (xTextAreaEnd - xTextAreaStart) / float64(len(conts))
-	for i, cont := range conts {
-		pdf.Text(xTextAreaStart+float64(i)*xTextIncr, bnd.top+totalHeaderHeight-boxTextMargin, cont)
+	xTextIncr := 0.0
+	freeWidthPerItem := (xTextAreaEnd - xTextAreaStart - usedWidth) / float64(len(conts))
+
+	for _, cont := range conts {
+		pdf.Text(xTextAreaStart+xTextIncr, bnd.top+totalHeaderHeight-boxTextMargin, cont)
+		xTextIncr += float64(len(cont))*charW + freeWidthPerItem
 	}
 
 	return bounds{bnd.top + totalHeaderHeight + padding, bnd.left, bnd.bottom, bnd.right}

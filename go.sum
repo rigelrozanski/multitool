@@ -168,6 +168,8 @@ github.com/rigelrozanski/thranch v0.0.0-20210411174822-0fb493ccb9d6 h1:Jqx5uVIj+
 github.com/rigelrozanski/thranch v0.0.0-20210411174822-0fb493ccb9d6/go.mod h1:Oof/LrcMLUCMwKLEmL2cDRmi5v3K/vAF8sF/bMeunHc=
 github.com/rigelrozanski/thranch v0.0.0-20210411224932-c1f2a53cb809 h1:G2P4fIjo/t/VOxNOrGuybRncQcoZvOl80gbcxaZNutQ=
 github.com/rigelrozanski/thranch v0.0.0-20210411224932-c1f2a53cb809/go.mod h1:Oof/LrcMLUCMwKLEmL2cDRmi5v3K/vAF8sF/bMeunHc=
+github.com/rigelrozanski/thranch v0.0.0-20210804230158-a1f579de58f6 h1:okZ0di/JfDrUoAAoZT1UaeFtgOxCeukDcm0C6PSynL4=
+github.com/rigelrozanski/thranch v0.0.0-20210804230158-a1f579de58f6/go.mod h1:Oof/LrcMLUCMwKLEmL2cDRmi5v3K/vAF8sF/bMeunHc=
 github.com/rigelrozanski/wb v0.0.0-20190430015828-95a7304b685b h1:nGq03QwNCIqp/OdpxRccAEaFMPm7Aqkwo5GJ27Uj0L4=
 github.com/rigelrozanski/wb v0.0.0-20190430015828-95a7304b685b/go.mod h1:oyUkbTv5DJjSLUnZPip1LMcLKoCwC172EY3ny1wTiDc=
 github.com/rogpeppe/fastuuid v0.0.0-20150106093220-6724a57986af/go.mod h1:XWv6SoW27p1b0cqNHllgS5HIMJraePCO15w5zCzIWYg=
