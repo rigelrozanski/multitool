@@ -14,6 +14,34 @@ import (
 	"github.com/spf13/cobra"
 )
 
+/*
+Design of audio playback in songsheet
+ - the sine now needs:
+   - playback time (first line in format "00:00.00" however can be
+     ANYWHERE in line, for instance to line up with a lyric would often be the easiest)
+   - relative position to all other sines
+ - qu ability to record companion audio track for an
+   idea file... should tag the new id:
+      some-tag,uses-audio=1142,some-other-tag
+ - command in vim to call qu record using sox and dispatch
+ - audio playback at the hump location
+   - another filename tag for vim to enable playback with: song-playback
+   - ability play slowed down (using speed, or tempo option within sox)
+ - move the cursor with the hump locations as the playback occurs
+ - ability to hit escape during playback to stop the playback and cursor
+ - adjust cursor movement speed which represent the playback based on all the
+ checkpoints at the humps and the actual time vs the amount of time the humps
+ would suggest. The first and last checkpoints normalize the position of the
+ audio, and create the average BPM.  additional checkpoints within the track
+ will create movement speed variations of the cursor.
+*/
+
+/*
+TODO
+- seperate out melody struct from lyrics struct, they are not really connected
+
+*/
+
 var (
 	SongsheetFilledCmd = &cobra.Command{
 		Use:   "songsheet-filled [qu-id]",
@@ -22,12 +50,15 @@ var (
 		RunE:  songsheetFilledCmd,
 	}
 
-	lyricFontPt float64
+	lyricFontPt  float64
+	longestHumps float64
 
 	printTitleFlag         bool
 	spacingRatioFlag       float64
 	sineAmplitudeRatioFlag float64
 	numColumnsFlag         uint16
+
+	subscriptFactor = 0.6
 )
 
 func init() {
@@ -41,7 +72,7 @@ func init() {
 	SongsheetFilledCmd.PersistentFlags().Float64Var(
 		&spacingRatioFlag, "spacing-ratio", 1.5, "ratio of the spacing to the lyric-lines")
 	SongsheetFilledCmd.PersistentFlags().Float64Var(
-		&sineAmplitudeRatioFlag, "amp-ratio", 0.6, "ratio of amplitude of the sine curve to the lyric text")
+		&sineAmplitudeRatioFlag, "amp-ratio", 0.75, "ratio of amplitude of the sine curve to the lyric text")
 	RootCmd.AddCommand(SongsheetFilledCmd)
 
 }
@@ -52,10 +83,14 @@ func songsheetFilledCmd(cmd *cobra.Command, args []string) error {
 	pdf.SetMargins(0, 0, 0)
 	pdf.AddPage()
 
+	// each line of text from the input file
+	// is attempted to be fit into elements
+	// in the order provided within elemKinds
 	elemKinds := []tssElement{
-		chordChart{},
 		singleSpacing{},
+		chordChart{},
 		singleAnnotatedSine{},
+		singleLineMelody{},
 		singleLineLyrics{},
 	}
 
@@ -92,7 +127,7 @@ func songsheetFilledCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	//determine lyricFontPt
-	lyricFontPt, err = determineLyricFontPt(lines, bndsCols[0])
+	longestHumps, lyricFontPt, err = determineLyricFontPt(lines, bndsCols[0])
 	if err != nil {
 		return err
 	}
@@ -252,8 +287,8 @@ type chordChart struct {
 }
 
 type Chord struct {
-	name      string // must be 1 or 2 characters
-	positions []int  // from thick to thin guitar strings
+	name      string   // must be 1 or 2 characters
+	positions []string // from thick to thin guitar strings
 }
 
 var _ tssElement = chordChart{}
@@ -318,13 +353,7 @@ func (c chordChart) parseText(lines []string) (reduced []string, elem tssElement
 					word += string(lines[i][j+1])
 				}
 			}
-			num, err := strconv.Atoi(word)
-			if err != nil {
-				return lines, elem,
-					fmt.Errorf("bad number conversion for %v at %v,%v",
-						word, j, i)
-			}
-			newChord.positions = append(newChord.positions, num)
+			newChord.positions = append(newChord.positions, word)
 		}
 		cOut.chords = append(cOut.chords, newChord)
 	}
@@ -395,27 +424,50 @@ func (c chordChart) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 		pdf.Line(x, yBottomStart, x, yBottomEnd)
 
 		// print labels
-		pdf.SetFont("courier", "", c.labelFontPt)
 		if chordIndex >= len(c.chords) {
 			continue
 		}
-
 		chd := c.chords[chordIndex]
-		xLabel := x - fontWidth/2
-		if len(chd.name) == 2 {
-			xLabel = x - fontWidth
+		if len(chd.name) == 2 &&
+			unicode.IsLetter(rune(chd.name[0])) &&
+			unicode.IsUpper(rune(chd.name[0])) &&
+			unicode.IsNumber(rune(chd.name[1])) {
+
+			xLabel := x - fontWidth/2
+			yLabel := yBottomEnd + fontHeight + labelPadding
+			pdf.SetFont("courier", "", c.labelFontPt)
+			pdf.Text(xLabel, yLabel, string(chd.name[0]))
+			pdf.SetFont("courier", "", c.labelFontPt*subscriptFactor)
+			pdf.Text(xLabel+fontWidth, yLabel, string(chd.name[1]))
+		} else {
+			xLabel := x - fontWidth/2
+			if len(chd.name) == 2 {
+				xLabel = x - fontWidth
+			}
+			yLabel := yBottomEnd + fontHeight + labelPadding
+			pdf.SetFont("courier", "", c.labelFontPt)
+			pdf.Text(xLabel, yLabel, chd.name)
 		}
-		yLabel := yBottomEnd + fontHeight + labelPadding
-		pdf.Text(xLabel, yLabel, chd.name)
 
 		// print positions
 		pdf.SetFont("courier", "", c.positionsFontPt)
 		posFontH := GetFontHeight(c.positionsFontPt)
-		xPositions := x - fontWidth/2 // maybe incorrect, but looks better
+		posFontW := GetCourierFontWidthFromHeight(posFontH)
+		//xPositions := x - fontWidth/2 // maybe incorrect, but looks better
+		xPositions := x - posFontW/2
 		for i := 0; i < noLines; i++ {
 			yPositions := bnd.top + cactusZoneWidth +
 				(float64(i) * spacing) + posFontH/2
-			pdf.Text(xPositions, yPositions, strconv.Itoa(chd.positions[i]))
+
+			if chd.positions[i] == "x" {
+				ext := posFontW / 2
+				y := yPositions - posFontH/2
+				pdf.Line(x-ext, y-ext, x+ext, y+ext)
+				pdf.Line(x-ext, y+ext, x+ext, y-ext)
+				continue
+			}
+
+			pdf.Text(xPositions, yPositions, chd.positions[i])
 		}
 
 		chordIndex++
@@ -450,11 +502,11 @@ func (s singleSpacing) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 }
 
 // ---------------------
-
-type singleLineLyrics struct {
-	lyrics   string
+type singleLineMelody struct {
 	melodies []melody
 }
+
+var _ tssElement = singleLineMelody{}
 
 type melody struct {
 	blank              bool // no melody here, this is just a placeholder
@@ -463,21 +515,72 @@ type melody struct {
 	modifier           rune // either '.', '-', or '~'
 }
 
-var _ tssElement = singleLineLyrics{}
+// contains at least one number,
+// and only numbers or spaces
+func stringOnlyContainsNumbersAndSpaces(s string) bool {
+	numFound := false
+	for _, b := range s {
+		r := rune(b)
+		if !(unicode.IsSpace(r) || unicode.IsNumber(r)) {
+			return false
+		}
+		if unicode.IsNumber(r) {
+			numFound = true
+		}
+	}
+	return numFound
+}
 
-func (s singleLineLyrics) parseText(lines []string) (reduced []string, elem tssElement, err error) {
-	if len(lines) < 4 {
+// contains at least one modifier,
+// and only modifiers or spaces
+func stringOnlyContainsMelodyModifiers(s string) bool {
+	modFound := false
+	for _, b := range s {
+		r := rune(b)
+		if !(r == '.' || r == '-' || r == '~' || unicode.IsSpace(r)) {
+			return false
+		}
+		if r == '.' || r == '-' || r == '~' {
+			modFound = true
+		}
+	}
+	return modFound
+}
+
+func (s singleLineMelody) parseText(lines []string) (reduced []string, elem tssElement, err error) {
+	if len(lines) < 2 {
 		return lines, elem,
 			fmt.Errorf("improper number of input lines,"+
 				" want 1 have %v", len(lines))
 	}
 
-	sll := singleLineLyrics{}
-	sll.lyrics = lines[0]
+	// determine which lines should be used for the melody modifiers
+	melodyNums, upperMods, lowerMods := "", "", ""
+	switch {
+	// numbers then modifiers
+	case stringOnlyContainsNumbersAndSpaces(lines[0]) &&
+		stringOnlyContainsMelodyModifiers(lines[1]):
+		melodyNums, lowerMods = lines[0], lines[1]
 
-	upperMods := lines[1]
-	melodyNums := lines[2]
-	lowerMods := lines[3]
+	// modifiers, then numbers, then modifiers
+	case len(lines) >= 3 &&
+		stringOnlyContainsMelodyModifiers(lines[0]) &&
+		stringOnlyContainsNumbersAndSpaces(lines[1]) &&
+		stringOnlyContainsMelodyModifiers(lines[2]):
+		upperMods, melodyNums, lowerMods = lines[0], lines[1], lines[2]
+
+	// modifiers then numbers then either not modfiers or no third line
+	case stringOnlyContainsMelodyModifiers(lines[0]) &&
+		stringOnlyContainsNumbersAndSpaces(lines[1]) &&
+		((len(lines) >= 3 && !stringOnlyContainsMelodyModifiers(lines[2])) ||
+			len(lines) == 2):
+		upperMods, melodyNums = lines[0], lines[1]
+	default:
+		return lines, elem, fmt.Errorf("could not determine melody number line and modifier line")
+	}
+
+	slm := singleLineMelody{}
+	melodiesFound := false
 	for i, r := range melodyNums {
 		if !(unicode.IsSpace(r) || unicode.IsNumber(r)) {
 			return lines, elem, fmt.Errorf(
@@ -485,64 +588,57 @@ func (s singleLineLyrics) parseText(lines []string) (reduced []string, elem tssE
 					"than numbers and spaces (rune: %v, col: %v)", r, i)
 		}
 		if unicode.IsSpace(r) {
-			sll.melodies = append(sll.melodies, melody{blank: true})
-		} else {
-			m := melody{blank: false, num: r}
-			if len(upperMods) > i && !unicode.IsSpace(rune(upperMods[i])) {
-				m.modifierIsAboveNum = true
-				m.modifier = rune(upperMods[i])
-			} else if len(lowerMods) > i && !unicode.IsSpace(rune(lowerMods[i])) {
-				m.modifierIsAboveNum = false
-				m.modifier = rune(lowerMods[i])
-			} else { // there must be no modifier
-				return lines, elem, fmt.Errorf("no melody modifier for the melody")
-			}
-
-			// ensure that the melody modifier has a valid rune
-			if !(m.modifier == '.' || m.modifier == '-' || m.modifier == '~') {
-				return lines, elem, fmt.Errorf(
-					"bad modifier not '.', '-', or '~' (have %v)", m.modifier)
-			}
-
-			sll.melodies = append(sll.melodies, m)
+			slm.melodies = append(slm.melodies, melody{blank: true})
+			continue
 		}
 
+		m := melody{blank: false, num: r}
+		if len(upperMods) > i && !unicode.IsSpace(rune(upperMods[i])) {
+			m.modifierIsAboveNum = true
+			m.modifier = rune(upperMods[i])
+		} else if len(lowerMods) > i && !unicode.IsSpace(rune(lowerMods[i])) {
+			m.modifierIsAboveNum = false
+			m.modifier = rune(lowerMods[i])
+		} else { // there must be no modifier
+			return lines, elem, fmt.Errorf("no melody modifier for the melody")
+		}
+
+		// ensure that the melody modifier has a valid rune
+		if !(m.modifier == '.' || m.modifier == '-' || m.modifier == '~') {
+			return lines, elem, fmt.Errorf(
+				"bad modifier not '.', '-', or '~' (have %v)", m.modifier)
+		}
+
+		slm.melodies = append(slm.melodies, m)
+		melodiesFound = true
 	}
 
-	return lines[4:], sll, nil
+	if !melodiesFound {
+		return lines, elem, fmt.Errorf("no melodies found")
+	}
+
+	return lines[3:], slm, nil
 }
 
-func (s singleLineLyrics) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
+func (s singleLineMelody) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 
 	// accumulate all the used height as it's used
 	usedHeight := 0.0
 
-	// print the lyric
-	pdf.SetFont("courier", "", lyricFontPt)
+	// lyric font info
 	fontH := GetFontHeight(lyricFontPt)
 	fontW := GetCourierFontWidthFromHeight(fontH)
 	xLyricStart := bnd.left - fontW/2 // - because of slight right shift in sine annotations
-	yLyric := bnd.top + 1.3*fontH     // 3/2 because of tall characters extending beyond height calculation
-
-	// the lyrics could just be printed in one go,
-	// however do to the inaccuracies of determining
-	// font heights and widths (boohoo) it will look
-	// better to just print out each char individually
-	for i, ch := range s.lyrics {
-		xLyric := xLyricStart + float64(i)*fontW
-		pdf.Text(xLyric, yLyric, string(ch))
-	}
-	usedHeight += 1.3 * fontH
 
 	// print the melodies
-	melodyFontPt := lyricFontPt * 0.7 // the 0.7 makes room for modifiers
+	melodyFontPt := lyricFontPt
 	pdf.SetFont("courier", "", melodyFontPt)
 	melodyFontH := GetFontHeight(melodyFontPt)
 	melodyFontW := GetCourierFontWidthFromHeight(melodyFontH)
-	melodyHPadding := (fontH - melodyFontH) / 2 // /2 because padded above and below
-	melodyWPadding := (fontW - melodyFontW) / 2 // /2 because padded right and left
-	yNum := yLyric + melodyFontH + melodyHPadding*4
-	usedHeight += melodyFontH + melodyHPadding*4
+	melodyHPadding := melodyFontH * 0.3
+	melodyWPadding := 0.0
+	yNum := bnd.top + melodyFontH + melodyHPadding*2
+	usedHeight += melodyFontH + melodyHPadding*3
 	for i, melody := range s.melodies {
 		if melody.blank {
 			continue
@@ -575,10 +671,10 @@ func (s singleLineLyrics) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 			xModMid := xNum + melodyFontW/2
 			xModEnd := xNum + melodyFontW
 			yMod := yNum + melodyHPadding/2
-			yModMid := yMod + melodyHPadding*3
+			yModMid := yMod + melodyHPadding*2
 			if melody.modifierIsAboveNum {
 				yMod = yNum - melodyFontH - melodyHPadding/2
-				yModMid = yMod - melodyHPadding*3
+				yModMid = yMod - melodyHPadding*2
 			}
 			pdf.SetLineWidth(thinishLW)
 			pdf.Curve(xModStart, yMod, xModMid, yModMid, xModEnd, yMod, "")
@@ -594,9 +690,53 @@ func (s singleLineLyrics) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 
 // ---------------------
 
+type singleLineLyrics struct {
+	lyrics string
+}
+
+var _ tssElement = singleLineLyrics{}
+
+func (s singleLineLyrics) parseText(lines []string) (reduced []string, elem tssElement, err error) {
+	if len(lines) < 1 {
+		return lines, elem,
+			fmt.Errorf("improper number of input lines,"+
+				" want 1 have %v", len(lines))
+	}
+
+	sll := singleLineLyrics{}
+	sll.lyrics = lines[0]
+	return lines[1:], sll, nil
+}
+
+func (s singleLineLyrics) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
+
+	// accumulate all the used height as it's used
+	usedHeight := 0.0
+
+	// print the lyric
+	pdf.SetFont("courier", "", lyricFontPt)
+	fontH := GetFontHeight(lyricFontPt)
+	fontW := GetCourierFontWidthFromHeight(fontH)
+	xLyricStart := bnd.left - fontW/2 // - because of slight right shift in sine annotations
+	yLyric := bnd.top + 1.3*fontH     // 3/2 because of tall characters extending beyond height calculation
+
+	// the lyrics could just be printed in one go,
+	// however do to the inaccuracies of determining
+	// font heights and widths (boohoo) it will look
+	// better to just print out each char individually
+	for i, ch := range s.lyrics {
+		xLyric := xLyricStart + float64(i)*fontW
+		pdf.Text(xLyric, yLyric, string(ch))
+	}
+	usedHeight += 1.3 * fontH
+	return bounds{bnd.top + usedHeight, bnd.left, bnd.bottom, bnd.right}
+}
+
+// ---------------------
+
 const ( // empirically determined
-	ptToHeight    = 110  //72
-	widthToHeight = 0.93 //
+	ptToHeight    = 100  //72
+	widthToHeight = 0.82 //
 )
 
 func GetFontPt(heightInches float64) float64 {
@@ -624,30 +764,34 @@ type singleAnnotatedSine struct {
 }
 
 type sineAnnotation struct {
-	position float64 // in humps
-	ch       rune    // annotation text
+	position  float64 // in humps
+	ch        rune    // annotation text
+	subscript bool    // should be printed as subscript
 }
 
 var _ tssElement = singleAnnotatedSine{}
 
 func determineLyricFontPt(
-	lines []string, bnd bounds) (fontPt float64, err error) {
+	lines []string, bnd bounds) (maxHumps, fontPt float64, err error) {
 
+	// find the longest set of humps among them all
 	humpsChars := 0
 	for i := 0; i < len(lines)-1; i++ {
 		if strings.HasPrefix(lines[i], "_   _   _") &&
 			strings.HasPrefix(lines[i+1], " \\_/ \\_/ \\_/") {
 
-			humpsChars = len(strings.TrimSpace(lines[i]))
+			humpsCharsNew := len(strings.TrimSpace(lines[i]))
 			secondLineLen := len(strings.TrimSpace(lines[i+1])) + 1 // +1 for the leading space just trimmed
-			if humpsChars < secondLineLen {
-				humpsChars = secondLineLen
+			if humpsCharsNew < secondLineLen {
+				humpsCharsNew = secondLineLen
 			}
-			break
+			if humpsCharsNew > humpsChars {
+				humpsChars = humpsCharsNew
+			}
 		}
 	}
 	if humpsChars == 0 {
-		return 0, errors.New("could not find a sine curve to determine the lyric font pt")
+		return 0, 0, errors.New("could not find a sine curve to determine the lyric font pt")
 	}
 
 	xStart := bnd.left
@@ -655,7 +799,7 @@ func determineLyricFontPt(
 	width := xEnd - xStart
 	fontWidth := width / float64(humpsChars)
 	fontHeight := GetCourierFontHeightFromWidth(fontWidth)
-	return GetFontPt(fontHeight), nil
+	return float64(humpsChars) / 4, GetFontPt(fontHeight), nil
 }
 
 func (s singleAnnotatedSine) parseText(lines []string) (reduced []string, elem tssElement, err error) {
@@ -688,12 +832,23 @@ func (s singleAnnotatedSine) parseText(lines []string) (reduced []string, elem t
 	humps := float64(humpsChars) / 4
 
 	boldedCentral := []sineAnnotation{}
+	prevCh := ' '
 	for pos, ch := range lines[0] {
 		if ch == ' ' {
 			continue
 		}
+		subscript := false
+		if unicode.IsNumber(ch) &&
+			unicode.IsLetter(prevCh) &&
+			unicode.IsUpper(prevCh) {
+
+			subscript = true
+		}
+
 		boldedCentral = append(boldedCentral,
-			sineAnnotation{float64(pos) / 4, ch})
+			sineAnnotation{float64(pos) / 4, ch, subscript})
+
+		prevCh = ch
 	}
 
 	alongSine := []sineAnnotation{}
@@ -702,7 +857,7 @@ func (s singleAnnotatedSine) parseText(lines []string) (reduced []string, elem t
 			continue
 		}
 		alongSine = append(alongSine,
-			sineAnnotation{float64(pos) / 4, ch})
+			sineAnnotation{float64(pos) / 4, ch, false})
 	}
 
 	sas := singleAnnotatedSine{
@@ -730,13 +885,16 @@ func (s singleAnnotatedSine) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 	xStart := bnd.left
 	xEnd := bnd.right - padding
 	width := xEnd - xStart
+	if s.humps < longestHumps {
+		width = width * s.humps / longestHumps
+	}
 	frequency := math.Pi * 2 * s.humps / width
 	yStart := bnd.top + usedHeight/2
 	lastPointX := xStart
 	lastPointY := yStart
 	pdf.SetLineWidth(thinestLW)
 	for eqX := float64(0); true; eqX += resolution {
-		if xStart+eqX > xEnd {
+		if eqX > width {
 			break
 		}
 		eqY := amplitude * math.Cos(frequency*eqX)
@@ -757,10 +915,18 @@ func (s singleAnnotatedSine) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 	fontH := amplitude * 1.5
 	fontW := GetCourierFontWidthFromHeight(fontH)
 	fontPt := GetFontPt(fontH)
-	pdf.SetFont("courier", "B", fontPt)
+	fontHSub := fontH * subscriptFactor
+	fontPtSub := GetFontPt(fontHSub)
 	for _, bs := range s.boldedCentral {
+
+		pt := fontPt
+		if bs.subscript {
+			pt = fontPtSub
+		}
+
 		X := xStart + (bs.position/s.humps)*width - fontW/2
 		Y := yStart + fontH/2 // so the text is centered along the sine axis
+		pdf.SetFont("courier", "B", pt)
 		pdf.Text(X, Y, string(bs.ch))
 	}
 
