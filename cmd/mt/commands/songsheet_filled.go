@@ -27,6 +27,8 @@ Design of audio playback in songsheet
  - audio playback at the hump location
    - another filename tag for vim to enable playback with: song-playback
    - ability play slowed down (using speed, or tempo option within sox)
+   - This should be done with sequencial golang program calls (one call for
+     each cursor movement)
  - move the cursor with the hump locations as the playback occurs
  - ability to hit escape during playback to stop the playback and cursor
  - adjust cursor movement speed which represent the playback based on all the
@@ -38,8 +40,12 @@ Design of audio playback in songsheet
 
 /*
 TODO
-- seperate out melody struct from lyrics struct, they are not really connected
-
+- flags for colours!
+  - about the sine curve colours
+- bass line strings annotations
+- chord chart to be able to sqeeze a few more chords in beyond
+  the standard spacing
+- chord chart to be able to go across the top if the squeeze doesn't work
 */
 
 var (
@@ -251,6 +257,7 @@ func parseHeader(lines []string) (reduced []string, hc headerContent, err error)
 
 type Pdf interface {
 	SetLineWidth(width float64)
+	SetLineCapStyle(styleStr string)
 	Line(x1, y1, x2, y2 float64)
 	SetFont(familyStr, styleStr string, size float64)
 	Text(x, y float64, txtStr string)
@@ -264,6 +271,7 @@ type dummyPdf struct{}
 var _ Pdf = dummyPdf{}
 
 func (d dummyPdf) SetLineWidth(width float64)                            {}
+func (d dummyPdf) SetLineCapStyle(styleStr string)                       {}
 func (d dummyPdf) Line(x1, y1, x2, y2 float64)                           {}
 func (d dummyPdf) SetFont(familyStr, styleStr string, size float64)      {}
 func (d dummyPdf) Text(x, y float64, txtStr string)                      {}
@@ -362,6 +370,12 @@ func (c chordChart) parseText(lines []string) (reduced []string, elem tssElement
 	return lines[9:], cOut, nil
 }
 
+func isChordWithSubscript(ch1, ch2 rune) bool {
+	return unicode.IsLetter(ch1) &&
+		unicode.IsUpper(ch1) &&
+		(unicode.IsNumber(ch2) || (unicode.IsLetter(ch2) && unicode.IsLower(ch2)))
+}
+
 func (c chordChart) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 
 	usedHeight := 0.0
@@ -429,9 +443,7 @@ func (c chordChart) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 		}
 		chd := c.chords[chordIndex]
 		if len(chd.name) == 2 &&
-			unicode.IsLetter(rune(chd.name[0])) &&
-			unicode.IsUpper(rune(chd.name[0])) &&
-			unicode.IsNumber(rune(chd.name[1])) {
+			isChordWithSubscript(rune(chd.name[0]), rune(chd.name[1])) {
 
 			xLabel := x - fontWidth/2
 			yLabel := yBottomEnd + fontHeight + labelPadding
@@ -758,15 +770,26 @@ func GetCourierFontHeightFromWidth(width float64) float64 {
 // ---------------------
 
 type singleAnnotatedSine struct {
-	humps         float64
-	boldedCentral []sineAnnotation
-	alongSine     []sineAnnotation
+	humps     float64
+	alongAxis []sineAnnotation
+	alongSine []sineAnnotation
 }
 
 type sineAnnotation struct {
 	position  float64 // in humps
 	ch        rune    // annotation text
 	subscript bool    // should be printed as subscript
+	bolded    bool    // should be printed as subscript
+}
+
+// NewsineAnnotation creates a new sineAnnotation object
+func NewSineAnnotation(position float64, ch rune, subscript, bolded bool) sineAnnotation {
+	return sineAnnotation{
+		position:  position,
+		ch:        ch,
+		subscript: subscript,
+		bolded:    bolded,
+	}
 }
 
 var _ tssElement = singleAnnotatedSine{}
@@ -806,7 +829,7 @@ func (s singleAnnotatedSine) parseText(lines []string) (reduced []string, elem t
 
 	// the annotated sine must come in 4 lines
 	//    ex.   desciption
-	// 1) F              bolded central annotations
+	// 1) F              along axis annotations
 	// 2) _   _   _   _  text representation of the sine humps (top)
 	// 3)  \_/ \_/ \_/   text representation of the sine humps (bottom)
 	// 4)   ^   ^ 1   v  annotations along the sine curve
@@ -831,22 +854,29 @@ func (s singleAnnotatedSine) parseText(lines []string) (reduced []string, elem t
 	}
 	humps := float64(humpsChars) / 4
 
-	boldedCentral := []sineAnnotation{}
+	alongAxis := []sineAnnotation{}
 	prevCh := ' '
 	for pos, ch := range lines[0] {
 		if ch == ' ' {
 			continue
 		}
 		subscript := false
-		if unicode.IsNumber(ch) &&
-			unicode.IsLetter(prevCh) &&
-			unicode.IsUpper(prevCh) {
+		bolded := false
 
-			subscript = true
+		if unicode.IsLetter(ch) &&
+			unicode.IsUpper(ch) {
+
+			bolded = true
 		}
 
-		boldedCentral = append(boldedCentral,
-			sineAnnotation{float64(pos) / 4, ch, subscript})
+		if isChordWithSubscript(prevCh, ch) {
+
+			subscript = true
+			bolded = true
+		}
+
+		alongAxis = append(alongAxis,
+			NewSineAnnotation(float64(pos)/4, ch, subscript, bolded))
 
 		prevCh = ch
 	}
@@ -856,14 +886,25 @@ func (s singleAnnotatedSine) parseText(lines []string) (reduced []string, elem t
 		if ch == ' ' {
 			continue
 		}
+
+		bolded := false
+		if ch == 'V' {
+			ch = 'v'
+			bolded = true
+		}
+		if ch == 'A' {
+			ch = '^'
+			bolded = true
+		}
+
 		alongSine = append(alongSine,
-			sineAnnotation{float64(pos) / 4, ch, false})
+			NewSineAnnotation(float64(pos)/4, ch, false, bolded))
 	}
 
 	sas := singleAnnotatedSine{
-		humps:         humps,
-		boldedCentral: boldedCentral,
-		alongSine:     alongSine,
+		humps:     humps,
+		alongAxis: alongAxis,
+		alongSine: alongSine,
 	}
 
 	return lines[4:], sas, nil
@@ -876,11 +917,13 @@ func (s singleAnnotatedSine) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 	resolution := 0.01
 	lfh := GetFontHeight(lyricFontPt)
 	amplitude := sineAmplitudeRatioFlag * lfh
-	chhbs := lfh / 3 // char height beyond sine
+	chhbs := lfh / 3      // char height beyond sine
+	tipHover := chhbs / 2 // char hover when on the sine tip
 
 	usedHeight := 2 * ( // times 2 because both sides of the sine
 	amplitude +         // for the sine curve
-		chhbs) // for the text extending out of the sine curve
+		chhbs + // for the text extending out of the sine curve
+		tipHover) // for the floating text extendion out of the sine tips
 
 	xStart := bnd.left
 	xEnd := bnd.right - padding
@@ -908,7 +951,7 @@ func (s singleAnnotatedSine) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 		lastPointY = yStart - eqY
 	}
 
-	// print the bold central
+	// print the text along axis
 
 	// (max multiplier would be 2 as the text is
 	// centered between the positive and neg amplitude)
@@ -917,21 +960,26 @@ func (s singleAnnotatedSine) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 	fontPt := GetFontPt(fontH)
 	fontHSub := fontH * subscriptFactor
 	fontPtSub := GetFontPt(fontHSub)
-	for _, bs := range s.boldedCentral {
+	for _, aa := range s.alongAxis {
 
 		pt := fontPt
-		if bs.subscript {
+		if aa.subscript {
 			pt = fontPtSub
 		}
 
-		X := xStart + (bs.position/s.humps)*width - fontW/2
+		X := xStart + (aa.position/s.humps)*width - fontW/2
 		Y := yStart + fontH/2 // so the text is centered along the sine axis
-		pdf.SetFont("courier", "B", pt)
-		pdf.Text(X, Y, string(bs.ch))
+		bolded := ""
+		if aa.bolded {
+			bolded = "B"
+		}
+		pdf.SetFont("courier", bolded, pt)
+		pdf.Text(X, Y, string(aa.ch))
 	}
 
 	// print the characters along the sine curve
-	pdf.SetLineWidth(thinishLW)
+	pdf.SetLineCapStyle("square")
+	defer pdf.SetLineCapStyle("")
 	for _, as := range s.alongSine {
 		if as.ch == ' ' {
 			continue
@@ -941,34 +989,37 @@ func (s singleAnnotatedSine) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 		eqX := (as.position / s.humps) * width
 		eqY := amplitude * math.Cos(frequency*eqX)
 
-		// character height which extends beyond the sine curve
+		// determine bold params
+		bolded := ""
+		if as.bolded {
+			pdf.SetLineWidth(thickerLW)
+			bolded = "B"
+		} else {
+			pdf.SetLineWidth(thinishLW)
+		}
 
-		// TODO figure out some way to allow for emphasised lines
-		//      maybe doubling the lines up
-		//      maybe using V and A  ???
+		// character height which extends beyond the sine curve
 		switch as.ch {
 		case 'v':
 			tipX := xStart + eqX
 			tipY := yStart - eqY
 			dec := (as.position) - math.Trunc(as.position)
 			if dec == 0 || dec == 0.5 {
-				tipY -= chhbs / 2
+				tipY -= tipHover
 			}
 			// 45deg angles to the tip
 			pdf.Line(tipX-chhbs, tipY-chhbs, tipX, tipY)
 			pdf.Line(tipX, tipY, tipX+chhbs, tipY-chhbs)
-			//pdf.Line(tipX, tipY, tipX, tipY-chhbs*math.Sqrt(2))
 		case '^':
 			tipX := xStart + eqX
 			tipY := yStart - eqY
 			dec := (as.position) - math.Trunc(as.position)
 			if dec == 0 || dec == 0.5 {
-				tipY += chhbs / 2
+				tipY += tipHover
 			}
 			// 45deg angles to the tip
 			pdf.Line(tipX-chhbs, tipY+chhbs, tipX, tipY)
 			pdf.Line(tipX, tipY, tipX+chhbs, tipY+chhbs)
-			//pdf.Line(tipX, tipY, tipX, tipY+chhbs*math.Sqrt(2))
 		case '|':
 			x := xStart + eqX
 			pdf.Line(x, yStart-amplitude-chhbs, x, yStart+amplitude+chhbs)
@@ -979,7 +1030,7 @@ func (s singleAnnotatedSine) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 			w := GetCourierFontWidthFromHeight(h) // font width
 
 			// we want the character to be centered about the sine curve
-			pdf.SetFont("courier", "", fontPt)
+			pdf.SetFont("courier", bolded, fontPt)
 			tipX := xStart + eqX
 			tipY := yStart - eqY
 			pdf.Text(tipX-(w/2), tipY+(h/2), string(as.ch))

@@ -39,6 +39,7 @@ pattern example:
 		RunE: songsheetCmd,
 	}
 	padding   = 0.25
+	thickerLW = 0.017
 	thinLW    = 0.01
 	thinishLW = 0.0075
 	thinestLW = 0.001
