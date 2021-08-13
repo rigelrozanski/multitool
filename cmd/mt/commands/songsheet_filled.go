@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/jung-kurt/gofpdf"
@@ -46,6 +47,20 @@ TODO
 - chord chart to be able to sqeeze a few more chords in beyond
   the standard spacing
 - chord chart to be able to go across the top if the squeeze doesn't work
+- move on-sine annotations to either the top or bottom if they
+  directly intersect with a central-axis annotation
+- title font size/multiple lines?
+- create an amplitude decay factor (flag) allow for decays
+  to happen in the middle of sine
+   - also allow for pauses (no sine at all)
+- eliminate cactus prickles where no label exists
+- use of sine instead of cos with different text hump pattern:
+     _
+    / \_
+- allow for comments within a songsheet maybe same style as golang with `//`
+- make new file format (and search using qu OR in the current directory for files
+  with this new type)
+- break this program out to a new repo
 */
 
 var (
@@ -56,6 +71,20 @@ var (
 		RunE:  songsheetFilledCmd,
 	}
 
+	SongsheetPlaybackCmd = &cobra.Command{
+		Use:   "songsheet-filled-playback [qu-id] [cursor-x] [cursor-y]",
+		Short: "move the vim cursor to account for time passed after 1/4 of a sine duration",
+		Args:  cobra.ExactArgs(2),
+		RunE:  songsheetPlaybackCmd,
+	}
+
+	SongsheetPlaybackTimeCmd = &cobra.Command{
+		Use:   "songsheet-filled-playback-time [qu-id] [cursor-x] [cursor-y]",
+		Short: "return the playback time (mm:ss:[cs][cs]) for the current position",
+		Args:  cobra.ExactArgs(2),
+		RunE:  songsheetPlaybackTimeCmd,
+	}
+
 	lyricFontPt  float64
 	longestHumps float64
 
@@ -64,23 +93,206 @@ var (
 	sineAmplitudeRatioFlag float64
 	numColumnsFlag         uint16
 
-	subscriptFactor = 0.6
+	subsupSizeMul = 0.65 // size of sub and superscript relative to thier root's size
 )
 
 func init() {
 	quac.Initialize(os.ExpandEnv("$HOME/.thranch_config"))
 
 	SongsheetFilledCmd.PersistentFlags().BoolVar(
-		&mirrorStringsOrderFlag, "mirror", false, "mirror string positions")
+		&mirrorStringsOrderFlag, "mirror", false,
+		"mirror string positions")
 	SongsheetFilledCmd.PersistentFlags().Uint16Var(
-		&numColumnsFlag, "columns", 2, "number of columns to print song into")
-
+		&numColumnsFlag, "columns", 2,
+		"number of columns to print song into")
 	SongsheetFilledCmd.PersistentFlags().Float64Var(
-		&spacingRatioFlag, "spacing-ratio", 1.5, "ratio of the spacing to the lyric-lines")
+		&spacingRatioFlag, "spacing-ratio", 1.5,
+		"ratio of the spacing to the lyric-lines")
 	SongsheetFilledCmd.PersistentFlags().Float64Var(
-		&sineAmplitudeRatioFlag, "amp-ratio", 0.75, "ratio of amplitude of the sine curve to the lyric text")
+		&sineAmplitudeRatioFlag, "amp-ratio", 0.8,
+		"ratio of amplitude of the sine curve to the lyric text")
 	RootCmd.AddCommand(SongsheetFilledCmd)
+	RootCmd.AddCommand(SongsheetPlaybackCmd)
+	RootCmd.AddCommand(SongsheetPlaybackTimeCmd)
+}
 
+func songsheetPlaybackCmd(cmd *cobra.Command, args []string) error {
+	output, err := songsheetPlayback(cmd, args, false, true)
+	fmt.Printf(output)
+	return err
+}
+
+func songsheetPlaybackTimeCmd(cmd *cobra.Command, args []string) error {
+	output, err := songsheetPlayback(cmd, args, true, false)
+	fmt.Printf(output)
+	return err
+
+}
+
+func songsheetPlayback(cmd *cobra.Command, args []string, getTime, getMovement bool) (
+	output string, err error) {
+
+	if getTime && getMovement || (!getTime && !getMovement) {
+		panic("bad use of command one and only one must be true")
+	}
+
+	initTime := time.Now()
+
+	// get the relevant file
+	quid, err := strconv.Atoi(args[0])
+	if err != nil {
+		return err.Error(), err
+	}
+	content, found := quac.GetContentByID(uint32(quid))
+	if !found {
+		err = fmt.Errorf("could not find anything under id: %v", quid)
+		return err.Error(), err
+	}
+	lines := strings.Split(string(content), "\n")
+
+	curX, err := strconv.Atoi(args[1])
+	if err != nil {
+		return err.Error(), err
+	}
+
+	curY, err := strconv.Atoi(args[2])
+	if err != nil {
+		return err.Error(), err
+	}
+
+	// Determine the adjacent time markers,
+	// scan outward from this position to
+	// find the previous and next ones.
+
+	// the middle sas is the sas which the cursor is
+	// considered to be nearest to... it is from
+	// this line that the cursor movements will occur
+	middleSasLineNo := int16(-1)
+
+	// moving backwards
+	yI := int16(curY)
+	var surrSas lineAndSasses
+	el := singleAnnotatedSine{} // dummy element to make the call
+	for {
+		workingLines := lines[yI:]
+		_, sasEl, err := el.parseText(workingLines)
+		sas := sasEl.(singleAnnotatedSine)
+		if err == nil {
+			ls := lineAndSas{yI, sas}
+			surrSas = append([]lineAndSas{ls}, surrSas...)
+			if middleSasLineNo == -1 {
+				middleSasLineNo = yI + int16(lineNoOffsetToMiddleHump)
+			}
+			if sas.hasPlaybackTime {
+				break
+			}
+		}
+		yI--
+		if yI < 0 {
+			break
+		}
+	}
+	middleSasIndex := len(surrSas) - 1
+
+	// moving forwards
+	yI = int16(curY)
+	for {
+		workingLines := lines[yI:]
+		_, sasEl, err := el.parseText(workingLines)
+		sas := sasEl.(singleAnnotatedSine)
+		if err == nil {
+			ls := lineAndSas{yI, sas}
+			surrSas = append(surrSas, ls)
+			if sas.hasPlaybackTime {
+				break
+			}
+		}
+		yI++
+		if int(yI) >= len(lines) {
+			break
+		}
+	}
+
+	// check that the first and last elements have playback times
+	if len(surrSas) <= 1 {
+		err = errors.New("not enough sas's to determine the playback times")
+		return err.Error(), err
+	}
+	if !surrSas[0].sas.hasPlaybackTime {
+		err = errors.New("first sas doesn't have playback time")
+		return err.Error(), err
+	}
+	if !surrSas[len(surrSas)-1].sas.hasPlaybackTime {
+		err = errors.New("last sas doesn't have playback time")
+		return err.Error(), err
+	}
+	ptFirst, ptLast := surrSas[0].sas.pt, surrSas[len(surrSas)-1].sas.pt
+
+	// determine the total number of sine humps we're dealing with
+	totalHumps := 0.0
+	for _, s := range surrSas {
+		totalHumps += s.sas.humps
+	}
+
+	// determine the duration of time passing per hump
+	totalDur := float64(ptLast.t.Sub(ptFirst.t))
+	durPerOneForthHump := time.Duration((totalDur / totalHumps) / float64(charsToaHump))
+
+	endCalcTime := time.Now()
+	diffTime := endCalcTime.Sub(initTime)
+
+	// potentially have to move more than one
+	// character if this calculation has taken to long
+	charMovements := 1
+	finalSleep := 0
+	if diffTime <= durPerOneForthHump {
+		finalSleep := durPerOneForthHump - diffTime
+	} else {
+		charMovements += int(diffTime / durPerOneForthHump)
+		finalSleep := diffTime % durPerOneForthHump
+	}
+
+	finalCurX, finalCurY := surrSas.getNextPosition(
+		curX, middleSasIndex, charMovements)
+
+	// set the position of the cursor
+	// -1 because so that first position is 1
+	output = fmt.Sprintf("%vgg%vl", finalCurY, (finalCurX - 1))
+	return output, nil
+}
+
+var (
+	// line offset from the top of a text-sine (with chords and
+	// everything) to the middle of the text-based-sine-curve
+	lineNoOffsetToMiddleHump = 2
+
+	charsToaHump = 4 // 4 character positions to a hump in a text-based sine wave
+)
+
+type lineAndSas struct {
+	lineNo int16
+	sas    singleAnnotatedSine
+}
+
+type lineAndSasses []lineAndSas
+
+// gets the next position of the cursor which is moving hump-movements
+// along the text-sine-curve. If there are not enough positions within
+// the current hump, then recurively call for the next hump
+func (ls lineAndSasses) getNextPosition(startCurX, startHumpIndex, charMovement int) (
+	endCurX, endCurY int) {
+
+	// get the current line hump
+	clh := ls[startHumpIndex].sas.totalHumps()
+
+	if float64(startCurX)+charMovement <= clh*charsToaHump {
+		endCurX = startCurX + movements
+		endCurY = ls[startHumpIndex].lineNo + lineNoOffsetToMiddleHump
+		return endCurX, endCurY
+	}
+
+	reducedCM := (float64(startCurX) + charMovement - clh*charsToaHump)
+	return ls.getNextPosition(0, startHumpIndex+1, reducedCM)
 }
 
 func songsheetFilledCmd(cmd *cobra.Command, args []string) error {
@@ -345,10 +557,11 @@ func (c chordChart) parseText(lines []string) (reduced []string, elem tssElement
 
 		newChord := Chord{name: string(chordNames[j])}
 
-		// add the second character to the name (if it exists)
-		if j+1 < len(chordNames) {
-			if chordNames[j+1] != ' ' {
-				newChord.name += string(chordNames[j+1])
+		// add the second and third character to the name (if it exists)
+		if j+1 < len(chordNames) && chordNames[j+1] != ' ' {
+			newChord.name += string(chordNames[j+1])
+			if j+2 < len(chordNames) && chordNames[j+2] != ' ' {
+				newChord.name += string(chordNames[j+2])
 			}
 		}
 
@@ -370,10 +583,20 @@ func (c chordChart) parseText(lines []string) (reduced []string, elem tssElement
 	return lines[9:], cOut, nil
 }
 
-func isChordWithSubscript(ch1, ch2 rune) bool {
-	return unicode.IsLetter(ch1) &&
-		unicode.IsUpper(ch1) &&
-		(unicode.IsNumber(ch2) || (unicode.IsLetter(ch2) && unicode.IsLower(ch2)))
+// test to see whether or not the second and third inputs are
+// superscript and/subscript to the first input if it is a chord
+func determineChordsSubscriptSuperscript(ch1, ch2, ch3 rune) (subscript, superscript rune) {
+	if !(unicode.IsLetter(ch1) && unicode.IsUpper(ch1)) {
+		return ' ', ' '
+	}
+	subscript, superscript = ' ', ' '
+	if unicode.IsNumber(ch2) || (unicode.IsLetter(ch2) && unicode.IsLower(ch2)) {
+		subscript = ch2
+	}
+	if unicode.IsNumber(ch3) || (unicode.IsLetter(ch3) && unicode.IsLower(ch3)) {
+		superscript = ch3
+	}
+	return subscript, superscript
 }
 
 func (c chordChart) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
@@ -442,23 +665,33 @@ func (c chordChart) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 			continue
 		}
 		chd := c.chords[chordIndex]
-		if len(chd.name) == 2 &&
-			isChordWithSubscript(rune(chd.name[0]), rune(chd.name[1])) {
 
-			xLabel := x - fontWidth/2
-			yLabel := yBottomEnd + fontHeight + labelPadding
-			pdf.SetFont("courier", "", c.labelFontPt)
-			pdf.Text(xLabel, yLabel, string(chd.name[0]))
-			pdf.SetFont("courier", "", c.labelFontPt*subscriptFactor)
-			pdf.Text(xLabel+fontWidth, yLabel, string(chd.name[1]))
-		} else {
-			xLabel := x - fontWidth/2
-			if len(chd.name) == 2 {
-				xLabel = x - fontWidth
-			}
-			yLabel := yBottomEnd + fontHeight + labelPadding
-			pdf.SetFont("courier", "", c.labelFontPt)
-			pdf.Text(xLabel, yLabel, chd.name)
+		ch1, ch2, ch3 := ' ', ' ', ' '
+		switch len(chd.name) {
+		case 3:
+			ch3 = rune(chd.name[2])
+			fallthrough
+		case 2:
+			ch2 = rune(chd.name[1])
+			fallthrough
+		case 1:
+			ch1 = rune(chd.name[0])
+		}
+
+		subscriptCh, superscriptCh := determineChordsSubscriptSuperscript(
+			ch1, ch2, ch3)
+
+		xLabel := x - fontWidth/2
+		yLabel := yBottomEnd + fontHeight + labelPadding
+		pdf.SetFont("courier", "", c.labelFontPt)
+		pdf.Text(xLabel, yLabel, string(ch1))
+
+		if subscriptCh != ' ' {
+			pdf.SetFont("courier", "", c.labelFontPt*subsupSizeMul)
+			pdf.Text(xLabel+fontWidth, yLabel, string(subscriptCh))
+		}
+		if superscriptCh != ' ' {
+			panic("chords labels cannot have superscript")
 		}
 
 		// print positions
@@ -770,25 +1003,36 @@ func GetCourierFontHeightFromWidth(width float64) float64 {
 // ---------------------
 
 type singleAnnotatedSine struct {
-	humps     float64
-	alongAxis []sineAnnotation
-	alongSine []sineAnnotation
+	hasPlaybackTime bool
+	pt              playbackTime
+	humps           float64
+	trailingHumps   float64 // the sine curve reduces its amplitude to zero during these
+	alongAxis       []sineAnnotation
+	alongSine       []sineAnnotation
+}
+
+// Dummiii TODO
+func (sas singleAnnotatedSine) totalHumps() float64 {
+	return sas.humps + sas.trailingHumps
 }
 
 type sineAnnotation struct {
-	position  float64 // in humps
-	ch        rune    // annotation text
-	subscript bool    // should be printed as subscript
-	bolded    bool    // should be printed as subscript
+	position    float64 // in humps
+	bolded      bool    // whether the whole unit is bolded
+	ch          rune    // main character
+	subscript   rune    // following subscript character
+	superscript rune    // following superscript character
 }
 
 // NewsineAnnotation creates a new sineAnnotation object
-func NewSineAnnotation(position float64, ch rune, subscript, bolded bool) sineAnnotation {
+func NewSineAnnotation(position float64, bolded bool,
+	ch, subscript, superscript rune) sineAnnotation {
 	return sineAnnotation{
-		position:  position,
-		ch:        ch,
-		subscript: subscript,
-		bolded:    bolded,
+		position:    position,
+		bolded:      bolded,
+		ch:          ch,
+		subscript:   subscript,
+		superscript: superscript,
 	}
 }
 
@@ -800,11 +1044,14 @@ func determineLyricFontPt(
 	// find the longest set of humps among them all
 	humpsChars := 0
 	for i := 0; i < len(lines)-1; i++ {
-		if strings.HasPrefix(lines[i], "_   _   _") &&
-			strings.HasPrefix(lines[i+1], " \\_/ \\_/ \\_/") {
+		if strings.HasPrefix(lines[i], "_") &&
+			strings.HasPrefix(lines[i+1], " \\_/") {
 
 			humpsCharsNew := len(strings.TrimSpace(lines[i]))
-			secondLineLen := len(strings.TrimSpace(lines[i+1])) + 1 // +1 for the leading space just trimmed
+
+			// +1 for the leading space just trimmed
+			secondLineLen := len(strings.TrimSpace(lines[i+1])) + 1
+
 			if humpsCharsNew < secondLineLen {
 				humpsCharsNew = secondLineLen
 			}
@@ -822,45 +1069,122 @@ func determineLyricFontPt(
 	width := xEnd - xStart
 	fontWidth := width / float64(humpsChars)
 	fontHeight := GetCourierFontHeightFromWidth(fontWidth)
-	return float64(humpsChars) / 4, GetFontPt(fontHeight), nil
+	return float64(humpsChars) / charsToaHump, GetFontPt(fontHeight), nil
 }
 
-func (s singleAnnotatedSine) parseText(lines []string) (reduced []string, elem tssElement, err error) {
+// TODO better name for this function
+func IsTopLineSine(lines []string) (sas singleAnnotatedSine, yesitis bool, err error) {
 
-	// the annotated sine must come in 4 lines
+	// the annotated sine must come in 4 OR 5 Lines
 	//    ex.   desciption
 	// 1) F              along axis annotations
 	// 2) _   _   _   _  text representation of the sine humps (top)
 	// 3)  \_/ \_/ \_/   text representation of the sine humps (bottom)
 	// 4)   ^   ^ 1   v  annotations along the sine curve
+	// 5)     00:03.14   (optional) playback time position
 
 	if len(lines) < 4 {
-		return lines, elem, fmt.Errorf("improper number of input lines,"+
+		return sas, false, fmt.Errorf("improper number of input lines,"+
 			"want 4 have %v", len(lines))
 	}
 
-	// ensure that the first two lines start with at least 3 sine humps
-	//_   _   _
-	// \_/ \_/ \_/
-	if !(strings.HasPrefix(lines[1], "_   _   _") &&
-		strings.HasPrefix(lines[2], " \\_/ \\_/ \\_/")) {
-		return lines, elem, fmt.Errorf("first lines are not sine humps")
+	// ensure that the second and third lines start with at least 1 sine hump
+	//_
+	// \_/
+	if !(strings.HasPrefix(lines[1], "_") && strings.HasPrefix(lines[2], " \\_/")) {
+		return sas, false, fmt.Errorf("first lines are not sine humps")
+	}
+
+	// get the playback time if it exists
+	if len(lines) > 4 {
+		pt, ptFound := getPlaybackTimeFromLine(lines[4])
+		sas = singleAnnotatedSine{
+			hasPlaybackTime: ptFound,
+			pt:              pt,
+		}
+	}
+
+	return sas, true, nil
+}
+
+type playbackTime struct {
+	mins      uint8
+	secs      uint8
+	centiSecs uint8  // 1/100th of a second
+	str       string // string representation
+	t         time.Time
+}
+
+// 00:00.00
+func getPlaybackTimeFromLine(line string) (pt playbackTime, found bool) {
+	tr := strings.TrimSpace(line)
+	if len(tr) != 8 {
+		return pt, false
+	}
+	str := tr
+	spl1 := strings.SplitN(tr, ":", 2)
+	if len(spl1) != 2 {
+		return pt, false
+	}
+	spl2 := strings.SplitN(spl1[1], ".", 2)
+	if len(spl1) != 2 {
+		return pt, false
+	}
+
+	mins, err := strconv.Atoi(spl1[0])
+	if err != nil {
+		return pt, false
+	}
+	secs, err := strconv.Atoi(spl2[0])
+	if err != nil {
+		return pt, false
+	}
+	centiSecs, err := strconv.Atoi(spl2[0])
+	if err != nil {
+		return pt, false
+	}
+
+	// get the time in the golang time format
+	dur := time.Minute * mins
+	dur += time.Second * secs
+	dur += time.Millisecond * 10 * centiSecs
+	t := time.Time{}.Add(dur)
+
+	return pt{
+		mins:      uint8(mins),
+		secs:      uint8(secs),
+		centiSecs: uint8(centiSecs),
+		str:       str,
+		t:         t,
+	}, true
+}
+
+func (s singleAnnotatedSine) parseText(lines []string) (reduced []string, elem tssElement, err error) {
+
+	sas, _, err := s.IsTopLineSine(lines)
+	if err != nil {
+		return lines, elem, err
 	}
 
 	humpsChars := len(strings.TrimSpace(lines[1]))
-	secondLineLen := len(strings.TrimSpace(lines[2])) + 1 // +1 for the leading space just trimmed
+	secondLineTrimTrail := strings.TrimRight(lines[2], ".")
+	secondLineLen := len(strings.TrimSpace(secondLineTrimTrail)) + 1 // +1 for the leading space just trimmed
 	if humpsChars < secondLineLen {
 		humpsChars = secondLineLen
 	}
-	humps := float64(humpsChars) / 4
+	humps := float64(humpsChars) / charsToaHump
 
+	trailingHumpsChars := strings.Count(lines[2], ".")
+	trailingHumps := float64(trailingHumpsChars) / charsToaHump
+
+	// parse along axis text
 	alongAxis := []sineAnnotation{}
-	prevCh := ' '
-	for pos, ch := range lines[0] {
+	fl := lines[0]
+	for pos := 0; pos < len(fl); pos++ {
+		ch := rune(fl[pos])
 		if ch == ' ' {
 			continue
 		}
-		subscript := false
 		bolded := false
 
 		if unicode.IsLetter(ch) &&
@@ -869,18 +1193,30 @@ func (s singleAnnotatedSine) parseText(lines []string) (reduced []string, elem t
 			bolded = true
 		}
 
-		if isChordWithSubscript(prevCh, ch) {
-
-			subscript = true
-			bolded = true
+		ch2, ch3 := ' ', ' '
+		if pos+1 < len(fl) {
+			ch2 = rune(fl[pos+1])
+		}
+		if pos+2 < len(fl) {
+			ch3 = rune(fl[pos+2])
 		}
 
-		alongAxis = append(alongAxis,
-			NewSineAnnotation(float64(pos)/4, ch, subscript, bolded))
+		subscript, superscript := determineChordsSubscriptSuperscript(
+			ch, ch2, ch3)
 
-		prevCh = ch
+		alongAxis = append(alongAxis,
+			NewSineAnnotation(float64(pos)/4, bolded, ch,
+				subscript, superscript))
+
+		if subscript != ' ' {
+			pos++
+		}
+		if superscript != ' ' {
+			pos++
+		}
 	}
 
+	// parse along sine text
 	alongSine := []sineAnnotation{}
 	for pos, ch := range lines[3] {
 		if ch == ' ' {
@@ -898,15 +1234,13 @@ func (s singleAnnotatedSine) parseText(lines []string) (reduced []string, elem t
 		}
 
 		alongSine = append(alongSine,
-			NewSineAnnotation(float64(pos)/4, ch, false, bolded))
+			NewSineAnnotation(float64(pos)/4, bolded, ch, ' ', ' '))
 	}
 
-	sas := singleAnnotatedSine{
-		humps:     humps,
-		alongAxis: alongAxis,
-		alongSine: alongSine,
-	}
-
+	sas.humps = humps
+	sas.trailingHumps = trailingHumps
+	sas.alongAxis = alongAxis
+	sas.alongSine = alongSine
 	return lines[4:], sas, nil
 }
 
@@ -928,7 +1262,9 @@ func (s singleAnnotatedSine) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 	xStart := bnd.left
 	xEnd := bnd.right - padding
 	width := xEnd - xStart
+	trailingWidth := 0.0
 	if s.humps < longestHumps {
+		trailingWidth = width * s.trailingHumps / longestHumps
 		width = width * s.humps / longestHumps
 	}
 	frequency := math.Pi * 2 * s.humps / width
@@ -936,7 +1272,10 @@ func (s singleAnnotatedSine) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 	lastPointX := xStart
 	lastPointY := yStart
 	pdf.SetLineWidth(thinestLW)
-	for eqX := float64(0); true; eqX += resolution {
+
+	// regular sinepart
+	eqX := 0.0
+	for ; true; eqX += resolution {
 		if eqX > width {
 			break
 		}
@@ -951,21 +1290,41 @@ func (s singleAnnotatedSine) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 		lastPointY = yStart - eqY
 	}
 
+	// trailing sine part
+	maxWidth := width + trailingWidth
+	for ; true; eqX += resolution {
+		if eqX > maxWidth {
+			break
+		}
+
+		// trailing amplitude
+		ta := amplitude * (maxWidth - eqX) / trailingWidth
+
+		eqY := ta * math.Cos(frequency*eqX)
+
+		if eqX > 0 {
+			// -eqY because starts from topleft corner
+			pdf.Line(lastPointX, lastPointY, xStart+eqX, yStart-eqY)
+		}
+		lastPointX = xStart + eqX
+		lastPointY = yStart - eqY
+	}
+
+	///////////////
 	// print the text along axis
 
 	// (max multiplier would be 2 as the text is
 	// centered between the positive and neg amplitude)
-	fontH := amplitude * 1.5
+	fontH := amplitude * 1.7
+
 	fontW := GetCourierFontWidthFromHeight(fontH)
 	fontPt := GetFontPt(fontH)
-	fontHSub := fontH * subscriptFactor
-	fontPtSub := GetFontPt(fontHSub)
-	for _, aa := range s.alongAxis {
+	fontHSubSup := fontH * subsupSizeMul
+	fontPtSubSup := GetFontPt(fontHSubSup)
 
-		pt := fontPt
-		if aa.subscript {
-			pt = fontPtSub
-		}
+	XsubsupCrunch := fontW * 0.1 // squeeze the sub and super script into the chord a bit
+
+	for _, aa := range s.alongAxis {
 
 		X := xStart + (aa.position/s.humps)*width - fontW/2
 		Y := yStart + fontH/2 // so the text is centered along the sine axis
@@ -973,8 +1332,23 @@ func (s singleAnnotatedSine) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 		if aa.bolded {
 			bolded = "B"
 		}
-		pdf.SetFont("courier", bolded, pt)
+		pdf.SetFont("courier", bolded, fontPt)
 		pdf.Text(X, Y, string(aa.ch))
+
+		// print sub or super script if exists
+		if aa.subscript != ' ' || aa.superscript != ' ' {
+			Xsubsup := X + fontW - XsubsupCrunch
+			pdf.SetFont("courier", bolded, fontPtSubSup)
+			if aa.subscript != ' ' {
+				Ysub := Y - fontH/2 + fontHSubSup
+				pdf.Text(Xsubsup, Ysub, string(aa.subscript))
+			}
+			if aa.superscript != ' ' {
+				Ysuper := Y - fontH/2
+				pdf.Text(Xsubsup, Ysuper, string(aa.superscript))
+			}
+		}
+
 	}
 
 	// print the characters along the sine curve

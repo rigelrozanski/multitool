@@ -1,5 +1,7 @@
 # Multitool
 
+small tools each less than 1000 lines of code
+
 ## Installation From Source
 
 1. make sure you [have Go installed][1] and [put $GOPATH/bin in your $PATH][2]
