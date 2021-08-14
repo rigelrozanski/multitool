@@ -38,11 +38,12 @@ pattern example:
 		Args: cobra.ExactArgs(1),
 		RunE: songsheetCmd,
 	}
-	padding   = 0.25
-	thickerLW = 0.017
-	thinLW    = 0.01
-	thinishLW = 0.0075
-	thinestLW = 0.001
+	padding    = 0.25
+	thickerLW  = 0.017
+	thinLW     = 0.01
+	thinishLW  = 0.0075
+	thinishtLW = 0.005
+	thinestLW  = 0.001
 
 	headerFlag             bool
 	mirrorStringsOrderFlag bool

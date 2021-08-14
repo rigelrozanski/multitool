@@ -65,7 +65,7 @@ TODO
 
 var (
 	SongsheetFilledCmd = &cobra.Command{
-		Use:   "songsheet-filled [qu-id]",
+		Use:   "songsheetfilled [qu-id]",
 		Short: "print filled songsheet from qu id",
 		Args:  cobra.ExactArgs(1),
 		RunE:  songsheetFilledCmd,
@@ -978,13 +978,87 @@ func (s singleLineMelody) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 		// print extra decorations
 		switch melody.extra {
 		case extraBrac:
+			xBrac1 := xNum - fontW*0.5
+			xBrac2 := xNum + fontW*0.5
+			yBrac := yNum - melodyHPadding/2 // shift for looks
+			pdf.Text(xBrac1, yBrac, "(")
+			pdf.Text(xBrac2, yBrac, ")")
 
-			xBrac1 := xLyricStart + float64(i)*fontW*0.5 + melodyWPadding
-			xBrac2 := xLyricStart + float64(i)*fontW*1.5 + melodyWPadding
-			pdf.Text(xBrac1, yNum, "(")
-			pdf.Text(xBrac2, yNum, ")")
+		case extraSldUp:
 
-			//XXX rest of melodies
+			// get the next melody number
+			nextMelodyNum := ' '
+			j := i + 1
+			for ; j < len(s.melodies); j++ {
+				nmn := s.melodies[j].num
+				if unicode.IsNumber(nmn) {
+					nextMelodyNum = nmn
+					break
+				}
+			}
+
+			draw := true
+
+			// determine the starting location
+			xSldStart := xNum + fontW
+			ySldStart := yNum - melodyHPadding/7
+			switch melody.num {
+			case '0', '3', '5', '6':
+				xSldStart = xNum + fontW*0.65
+				ySldStart = yNum - melodyHPadding/4
+			case '1', '2':
+				xSldStart = xNum + fontW*0.75
+			case '4':
+				xSldStart = xNum + fontW*0.75
+			case '7':
+				xSldStart = xNum + fontW*0.4
+				ySldStart = yNum
+			case '8':
+				xSldStart = xNum + fontW*0.65
+			case '9':
+				xSldStart = xNum + fontW*0.55
+				ySldStart = yNum - melodyHPadding/4
+			default:
+				draw = false
+			}
+
+			// determine the ending location
+			xNumNext := xLyricStart + float64(j)*fontW + melodyWPadding
+			xSldEnd := xNumNext
+			ySldEnd := yNum - fontH + melodyHPadding/2
+			switch nextMelodyNum {
+			case '0':
+				xSldEnd = xNumNext + fontW*0.37
+				ySldEnd = yNum - fontH + melodyHPadding*0.7
+			case '1':
+				xSldEnd = xNumNext + fontW*0.3
+				ySldEnd = yNum - fontH + melodyHPadding*0.8
+			case '2':
+				xSldEnd = xNumNext + fontW*0.05
+			case '3':
+				xSldEnd = xNumNext + fontW*0.05
+			case '4':
+				xSldEnd = xNumNext + fontW*0.75
+			case '5':
+				xSldEnd = xNumNext + fontW*0.05
+			case '6':
+				xSldEnd = xNumNext + fontW*0.5
+			case '7':
+				xSldEnd = xNumNext + fontW*0.05
+			case '8':
+				xSldEnd = xNumNext + fontW*0.05
+			case '9':
+				xSldEnd = xNumNext + fontW*0.05
+			default:
+				draw = false
+			}
+
+			if draw {
+				pdf.SetLineCapStyle("round")
+				defer pdf.SetLineCapStyle("")
+				pdf.SetLineWidth(thinishtLW)
+				pdf.Line(xSldStart, ySldStart, xSldEnd, ySldEnd)
+			}
 
 		}
 	}
