@@ -977,18 +977,6 @@ func (s singleLineMelody) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 
 		// print extra decorations
 
-		// offset factors per number (specific to font)
-		XStart0, YStart0, XEnd0, YEnd0 := 0.55, 0.10, 0.45, 0.60
-		XStart1, YStart1, XEnd1, YEnd1 := 0.75, 0.14, 0.30, 0.75
-		XStart2, YStart2, XEnd2, YEnd2 := 0.75, 0.14, 0.30, 0.80
-		XStart3, YStart3, XEnd3, YEnd3 := 0.65, 0.14, 0.30, 0.75
-		XStart4, YStart4, XEnd4, YEnd4 := 0.75, 0.14, 0.60, 0.53
-		XStart5, YStart5, XEnd5, YEnd5 := 0.65, 0.14, 0.30, 0.60
-		XStart6, YStart6, XEnd6, YEnd6 := 0.65, 0.14, 0.50, 0.65
-		XStart7, YStart7, XEnd7, YEnd7 := 0.50, 0.10, 0.30, 0.65
-		XStart8, YStart8, XEnd8, YEnd8 := 0.65, 0.14, 0.30, 0.65
-		XStart9, YStart9, XEnd9, YEnd9 := 0.55, 0.25, 0.30, 0.65
-
 		switch melody.extra {
 		case extraBrac:
 			xBrac1 := xNum - fontW*0.5
@@ -1011,6 +999,18 @@ func (s singleLineMelody) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 			}
 
 			draw := true
+
+			// offset factors per number (specific to font)
+			XStart0, YStart0, XEnd0, YEnd0 := 0.55, 0.10, 0.45, 0.60
+			XStart1, YStart1, XEnd1, YEnd1 := 0.75, 0.14, 0.30, 0.75
+			XStart2, YStart2, XEnd2, YEnd2 := 0.75, 0.14, 0.30, 0.80
+			XStart3, YStart3, XEnd3, YEnd3 := 0.65, 0.14, 0.30, 0.75
+			XStart4, YStart4, XEnd4, YEnd4 := 0.75, 0.14, 0.60, 0.53
+			XStart5, YStart5, XEnd5, YEnd5 := 0.65, 0.14, 0.30, 0.60
+			XStart6, YStart6, XEnd6, YEnd6 := 0.65, 0.14, 0.50, 0.65
+			XStart7, YStart7, XEnd7, YEnd7 := 0.50, 0.10, 0.30, 0.65
+			XStart8, YStart8, XEnd8, YEnd8 := 0.65, 0.14, 0.30, 0.65
+			XStart9, YStart9, XEnd9, YEnd9 := 0.55, 0.25, 0.30, 0.65
 
 			// determine the starting location
 			xSldStart, ySldStart := 0.0, 0.0
@@ -1083,6 +1083,115 @@ func (s singleLineMelody) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 			case '9':
 				xSldEnd = xNumNext + fontW*XEnd9
 				ySldEnd = yNum - fontH + melodyHPadding*YEnd9
+			default:
+				draw = false
+			}
+
+			if draw {
+				pdf.SetLineCapStyle("round")
+				defer pdf.SetLineCapStyle("")
+				pdf.SetLineWidth(thinishtLW)
+				pdf.Line(xSldStart, ySldStart, xSldEnd, ySldEnd)
+			}
+
+		case extraSldDown:
+
+			// get the next melody number
+			nextMelodyNum := ' '
+			j := i + 1
+			for ; j < len(s.melodies); j++ {
+				nmn := s.melodies[j].num
+				if unicode.IsNumber(nmn) {
+					nextMelodyNum = nmn
+					break
+				}
+			}
+
+			draw := true
+
+			// offset factors per number (specific to font)
+			XStart0, YStart0, XEnd0, YEnd0 := 0.55, 0.60, 0.45, 0.10
+			XStart1, YStart1, XEnd1, YEnd1 := 0.55, 0.65, 0.23, 0.25
+			XStart2, YStart2, XEnd2, YEnd2 := 0.65, 0.64, 0.20, 0.25
+			XStart3, YStart3, XEnd3, YEnd3 := 0.65, 0.64, 0.30, 0.20
+			XStart4, YStart4, XEnd4, YEnd4 := 0.65, 0.55, 0.45, 0.20
+			XStart5, YStart5, XEnd5, YEnd5 := 0.70, 0.67, 0.30, 0.10
+			XStart6, YStart6, XEnd6, YEnd6 := 0.80, 0.64, 0.40, 0.15
+			XStart7, YStart7, XEnd7, YEnd7 := 0.75, 0.60, 0.45, 0.10
+			XStart8, YStart8, XEnd8, YEnd8 := 0.65, 0.64, 0.40, 0.10
+			XStart9, YStart9, XEnd9, YEnd9 := 0.50, 0.53, 0.20, 0.15
+
+			// determine the starting location
+			xSldStart, ySldStart := 0.0, 0.0
+			switch melody.num {
+			case '0':
+				xSldStart = xNum + fontW*XStart0
+				ySldStart = yNum - fontH + melodyHPadding*YStart0
+			case '1':
+				xSldStart = xNum + fontW*XStart1
+				ySldStart = yNum - fontH + melodyHPadding*YStart1
+			case '2':
+				xSldStart = xNum + fontW*XStart2
+				ySldStart = yNum - fontH + melodyHPadding*YStart2
+			case '3':
+				xSldStart = xNum + fontW*XStart3
+				ySldStart = yNum - fontH + melodyHPadding*YStart3
+			case '4':
+				xSldStart = xNum + fontW*XStart4
+				ySldStart = yNum - fontH + melodyHPadding*YStart4
+			case '5':
+				xSldStart = xNum + fontW*XStart5
+				ySldStart = yNum - fontH + melodyHPadding*YStart5
+			case '6':
+				xSldStart = xNum + fontW*XStart6
+				ySldStart = yNum - fontH + melodyHPadding*YStart6
+			case '7':
+				xSldStart = xNum + fontW*XStart7
+				ySldStart = yNum - fontH + melodyHPadding*YStart7
+			case '8':
+				xSldStart = xNum + fontW*XStart8
+				ySldStart = yNum - fontH + melodyHPadding*YStart8
+			case '9':
+				xSldStart = xNum + fontW*XStart9
+				ySldStart = yNum - fontH + melodyHPadding*YStart9
+			default:
+				draw = false
+			}
+
+			// determine the ending location
+			xNumNext := xLyricStart + float64(j)*fontW + melodyWPadding
+			xSldEnd, ySldEnd := 0.0, 0.0
+			switch nextMelodyNum {
+			case '0':
+				xSldEnd = xNumNext + fontW*XEnd0
+				ySldEnd = yNum - melodyHPadding*YEnd0
+			case '1':
+				xSldEnd = xNumNext + fontW*XEnd1
+				ySldEnd = yNum - melodyHPadding*YEnd1
+			case '2':
+				xSldEnd = xNumNext + fontW*XEnd2
+				ySldEnd = yNum - melodyHPadding*YEnd2
+			case '3':
+				xSldEnd = xNumNext + fontW*XEnd3
+				ySldEnd = yNum - melodyHPadding*YEnd3
+			case '4':
+				xSldEnd = xNumNext + fontW*XEnd4
+				ySldEnd = yNum - melodyHPadding*YEnd4
+			case '5':
+				xSldEnd = xNumNext + fontW*XEnd5
+				ySldEnd = yNum - melodyHPadding*YEnd5
+			case '6':
+				xSldEnd = xNumNext + fontW*XEnd6
+				ySldEnd = yNum - melodyHPadding*YEnd6
+			case '7':
+				xSldEnd = xNumNext + fontW*XEnd7
+				ySldEnd = yNum - melodyHPadding*YEnd7
+			case '8':
+				xSldEnd = xNumNext + fontW*XEnd8
+				ySldEnd = yNum - melodyHPadding*YEnd8
+			case '9':
+				xSldEnd = xNumNext + fontW*XEnd9
+				ySldEnd = yNum - melodyHPadding*YEnd9
 			default:
 				draw = false
 			}
