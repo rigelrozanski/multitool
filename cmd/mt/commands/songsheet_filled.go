@@ -976,6 +976,19 @@ func (s singleLineMelody) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 		}
 
 		// print extra decorations
+
+		// offset factors per number (specific to font)
+		XStart0, YStart0, XEnd0, YEnd0 := 0.55, 0.10, 0.45, 0.60
+		XStart1, YStart1, XEnd1, YEnd1 := 0.75, 0.14, 0.30, 0.75
+		XStart2, YStart2, XEnd2, YEnd2 := 0.75, 0.14, 0.30, 0.80
+		XStart3, YStart3, XEnd3, YEnd3 := 0.65, 0.14, 0.30, 0.75
+		XStart4, YStart4, XEnd4, YEnd4 := 0.75, 0.14, 0.60, 0.53
+		XStart5, YStart5, XEnd5, YEnd5 := 0.65, 0.14, 0.30, 0.60
+		XStart6, YStart6, XEnd6, YEnd6 := 0.65, 0.14, 0.50, 0.65
+		XStart7, YStart7, XEnd7, YEnd7 := 0.50, 0.10, 0.30, 0.65
+		XStart8, YStart8, XEnd8, YEnd8 := 0.65, 0.14, 0.30, 0.65
+		XStart9, YStart9, XEnd9, YEnd9 := 0.55, 0.25, 0.30, 0.65
+
 		switch melody.extra {
 		case extraBrac:
 			xBrac1 := xNum - fontW*0.5
@@ -1000,55 +1013,76 @@ func (s singleLineMelody) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 			draw := true
 
 			// determine the starting location
-			xSldStart := xNum + fontW
-			ySldStart := yNum - melodyHPadding/7
+			xSldStart, ySldStart := 0.0, 0.0
 			switch melody.num {
-			case '0', '3', '5', '6':
-				xSldStart = xNum + fontW*0.65
-				ySldStart = yNum - melodyHPadding/4
-			case '1', '2':
-				xSldStart = xNum + fontW*0.75
+			case '0':
+				xSldStart = xNum + fontW*XStart0
+				ySldStart = yNum - melodyHPadding*YStart0
+			case '1':
+				xSldStart = xNum + fontW*XStart1
+				ySldStart = yNum - melodyHPadding*YStart1
+			case '2':
+				xSldStart = xNum + fontW*XStart2
+				ySldStart = yNum - melodyHPadding*YStart2
+			case '3':
+				xSldStart = xNum + fontW*XStart3
+				ySldStart = yNum - melodyHPadding*YStart3
 			case '4':
-				xSldStart = xNum + fontW*0.75
+				xSldStart = xNum + fontW*XStart4
+				ySldStart = yNum - melodyHPadding*YStart4
+			case '5':
+				xSldStart = xNum + fontW*XStart5
+				ySldStart = yNum - melodyHPadding*YStart5
+			case '6':
+				xSldStart = xNum + fontW*XStart6
+				ySldStart = yNum - melodyHPadding*YStart6
 			case '7':
-				xSldStart = xNum + fontW*0.4
-				ySldStart = yNum
+				xSldStart = xNum + fontW*XStart7
+				ySldStart = yNum - melodyHPadding*YStart7
 			case '8':
-				xSldStart = xNum + fontW*0.65
+				xSldStart = xNum + fontW*XStart8
+				ySldStart = yNum - melodyHPadding*YStart8
 			case '9':
-				xSldStart = xNum + fontW*0.55
-				ySldStart = yNum - melodyHPadding/4
+				xSldStart = xNum + fontW*XStart9
+				ySldStart = yNum - melodyHPadding*YStart9
 			default:
 				draw = false
 			}
 
 			// determine the ending location
 			xNumNext := xLyricStart + float64(j)*fontW + melodyWPadding
-			xSldEnd := xNumNext
-			ySldEnd := yNum - fontH + melodyHPadding/2
+			xSldEnd, ySldEnd := 0.0, 0.0
 			switch nextMelodyNum {
 			case '0':
-				xSldEnd = xNumNext + fontW*0.37
-				ySldEnd = yNum - fontH + melodyHPadding*0.7
+				xSldEnd = xNumNext + fontW*XEnd0
+				ySldEnd = yNum - fontH + melodyHPadding*YEnd0
 			case '1':
-				xSldEnd = xNumNext + fontW*0.3
-				ySldEnd = yNum - fontH + melodyHPadding*0.8
+				xSldEnd = xNumNext + fontW*XEnd1
+				ySldEnd = yNum - fontH + melodyHPadding*YEnd1
 			case '2':
-				xSldEnd = xNumNext + fontW*0.05
+				xSldEnd = xNumNext + fontW*XEnd2
+				ySldEnd = yNum - fontH + melodyHPadding*YEnd2
 			case '3':
-				xSldEnd = xNumNext + fontW*0.05
+				xSldEnd = xNumNext + fontW*XEnd3
+				ySldEnd = yNum - fontH + melodyHPadding*YEnd3
 			case '4':
-				xSldEnd = xNumNext + fontW*0.75
+				xSldEnd = xNumNext + fontW*XEnd4
+				ySldEnd = yNum - fontH + melodyHPadding*YEnd4
 			case '5':
-				xSldEnd = xNumNext + fontW*0.05
+				xSldEnd = xNumNext + fontW*XEnd5
+				ySldEnd = yNum - fontH + melodyHPadding*YEnd5
 			case '6':
-				xSldEnd = xNumNext + fontW*0.5
+				xSldEnd = xNumNext + fontW*XEnd6
+				ySldEnd = yNum - fontH + melodyHPadding*YEnd6
 			case '7':
-				xSldEnd = xNumNext + fontW*0.05
+				xSldEnd = xNumNext + fontW*XEnd7
+				ySldEnd = yNum - fontH + melodyHPadding*YEnd7
 			case '8':
-				xSldEnd = xNumNext + fontW*0.05
+				xSldEnd = xNumNext + fontW*XEnd8
+				ySldEnd = yNum - fontH + melodyHPadding*YEnd8
 			case '9':
-				xSldEnd = xNumNext + fontW*0.05
+				xSldEnd = xNumNext + fontW*XEnd9
+				ySldEnd = yNum - fontH + melodyHPadding*YEnd9
 			default:
 				draw = false
 			}
