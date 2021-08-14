@@ -244,19 +244,25 @@ func songsheetPlayback(cmd *cobra.Command, args []string, getTime, getMovement b
 	// potentially have to move more than one
 	// character if this calculation has taken to long
 	charMovements := 1
-	finalSleep := 0
+	var finalSleep time.Duration
 	if diffTime <= durPerOneForthHump {
-		finalSleep := durPerOneForthHump - diffTime
+		finalSleep = durPerOneForthHump - diffTime
 	} else {
 		charMovements += int(diffTime / durPerOneForthHump)
-		finalSleep := diffTime % durPerOneForthHump
+		finalSleep = diffTime % durPerOneForthHump
 	}
+	time.Sleep(finalSleep)
 
-	finalCurX, finalCurY := surrSas.getNextPosition(
+	finalCurX, finalCurY, endReached := surrSas.getNextPosition(
 		curX, middleSasIndex, charMovements)
 
 	// set the position of the cursor
 	// -1 because so that first position is 1
+	if endReached {
+		output = fmt.Sprintf("<esc>")
+		return output, nil
+	}
+
 	output = fmt.Sprintf("%vgg%vl", finalCurY, (finalCurX - 1))
 	return output, nil
 }
@@ -266,7 +272,7 @@ var (
 	// everything) to the middle of the text-based-sine-curve
 	lineNoOffsetToMiddleHump = 2
 
-	charsToaHump = 4 // 4 character positions to a hump in a text-based sine wave
+	charsToaHump = 4.0 // 4 character positions to a hump in a text-based sine wave
 )
 
 type lineAndSas struct {
@@ -280,18 +286,22 @@ type lineAndSasses []lineAndSas
 // along the text-sine-curve. If there are not enough positions within
 // the current hump, then recurively call for the next hump
 func (ls lineAndSasses) getNextPosition(startCurX, startHumpIndex, charMovement int) (
-	endCurX, endCurY int) {
+	endCurX, endCurY int, endReached bool) {
+
+	if startHumpIndex >= len(ls) {
+		return 0, 0, true
+	}
 
 	// get the current line hump
 	clh := ls[startHumpIndex].sas.totalHumps()
 
-	if float64(startCurX)+charMovement <= clh*charsToaHump {
-		endCurX = startCurX + movements
-		endCurY = ls[startHumpIndex].lineNo + lineNoOffsetToMiddleHump
-		return endCurX, endCurY
+	if startCurX+charMovement <= int(clh*charsToaHump) {
+		endCurX = startCurX + charMovement
+		endCurY = int(ls[startHumpIndex].lineNo) + lineNoOffsetToMiddleHump
+		return endCurX, endCurY, false
 	}
 
-	reducedCM := (float64(startCurX) + charMovement - clh*charsToaHump)
+	reducedCM := (startCurX + charMovement - int(clh*charsToaHump))
 	return ls.getNextPosition(0, startHumpIndex+1, reducedCM)
 }
 
@@ -758,6 +768,12 @@ type melody struct {
 	num                rune
 	modifierIsAboveNum bool // otherwise below
 	modifier           rune // either '.', '-', or '~'
+
+	// whether to display:
+	//  '(' = the number with tight brackets
+	//  '/' = to add a modfier for a slide up
+	//  '\' = to add a modifier for a slide down
+	extra rune
 }
 
 // contains at least one number,
@@ -776,20 +792,37 @@ func stringOnlyContainsNumbersAndSpaces(s string) bool {
 	return numFound
 }
 
+const (
+	mod1         = '.'
+	mod2         = '-'
+	mod3         = '~'
+	extraBrac    = '('
+	extraSldUp   = '\\'
+	extraSldDown = '/'
+)
+
+func runeIsMod(r rune) bool {
+	return r == mod1 || r == mod2 || r == mod3
+}
+
+func runeIsExtra(r rune) bool {
+	return r == extraBrac || r == extraSldUp || r == extraSldDown
+}
+
 // contains at least one modifier,
-// and only modifiers or spaces
-func stringOnlyContainsMelodyModifiers(s string) bool {
-	modFound := false
+// and only modifiers, extras, or spaces
+func stringOnlyContainsMelodyModifiersAndExtras(s string) bool {
+	found := false
 	for _, b := range s {
 		r := rune(b)
-		if !(r == '.' || r == '-' || r == '~' || unicode.IsSpace(r)) {
+		if !(runeIsExtra(r) || runeIsMod(r) || unicode.IsSpace(r)) {
 			return false
 		}
-		if r == '.' || r == '-' || r == '~' {
-			modFound = true
+		if runeIsExtra(r) || runeIsMod(r) {
+			found = true
 		}
 	}
-	return modFound
+	return found
 }
 
 func (s singleLineMelody) parseText(lines []string) (reduced []string, elem tssElement, err error) {
@@ -800,26 +833,26 @@ func (s singleLineMelody) parseText(lines []string) (reduced []string, elem tssE
 	}
 
 	// determine which lines should be used for the melody modifiers
-	melodyNums, upperMods, lowerMods := "", "", ""
+	melodyNums, upper, lower := "", "", ""
 	switch {
-	// numbers then modifiers
+	// numbers then modifiers/extras
 	case stringOnlyContainsNumbersAndSpaces(lines[0]) &&
-		stringOnlyContainsMelodyModifiers(lines[1]):
-		melodyNums, lowerMods = lines[0], lines[1]
+		stringOnlyContainsMelodyModifiersAndExtras(lines[1]):
+		melodyNums, lower = lines[0], lines[1]
 
-	// modifiers, then numbers, then modifiers
+	// modifiers/extras, then numbers, then modifiers/extras
 	case len(lines) >= 3 &&
-		stringOnlyContainsMelodyModifiers(lines[0]) &&
+		stringOnlyContainsMelodyModifiersAndExtras(lines[0]) &&
 		stringOnlyContainsNumbersAndSpaces(lines[1]) &&
-		stringOnlyContainsMelodyModifiers(lines[2]):
-		upperMods, melodyNums, lowerMods = lines[0], lines[1], lines[2]
+		stringOnlyContainsMelodyModifiersAndExtras(lines[2]):
+		upper, melodyNums, lower = lines[0], lines[1], lines[2]
 
-	// modifiers then numbers then either not modfiers or no third line
-	case stringOnlyContainsMelodyModifiers(lines[0]) &&
+	// modifiers/extras then numbers then either not modfiers or no third line
+	case stringOnlyContainsMelodyModifiersAndExtras(lines[0]) &&
 		stringOnlyContainsNumbersAndSpaces(lines[1]) &&
-		((len(lines) >= 3 && !stringOnlyContainsMelodyModifiers(lines[2])) ||
+		((len(lines) >= 3 && !stringOnlyContainsMelodyModifiersAndExtras(lines[2])) ||
 			len(lines) == 2):
-		upperMods, melodyNums = lines[0], lines[1]
+		upper, melodyNums = lines[0], lines[1]
 	default:
 		return lines, elem, fmt.Errorf("could not determine melody number line and modifier line")
 	}
@@ -837,21 +870,36 @@ func (s singleLineMelody) parseText(lines []string) (reduced []string, elem tssE
 			continue
 		}
 
-		m := melody{blank: false, num: r}
-		if len(upperMods) > i && !unicode.IsSpace(rune(upperMods[i])) {
+		m := melody{blank: false, num: r, modifier: ' ', extra: ' '}
+		chAbove, chBelow := ' ', ' '
+		if len(upper) > i && !unicode.IsSpace(rune(upper[i])) {
+			chAbove = rune(upper[i])
+		}
+		if len(lower) > i && !unicode.IsSpace(rune(lower[i])) {
+			chBelow = rune(lower[i])
+		}
+		if runeIsExtra(chAbove) {
+			m.extra = chAbove
+		}
+		if runeIsExtra(chBelow) {
+			m.extra = chBelow
+		}
+		if runeIsMod(chAbove) {
 			m.modifierIsAboveNum = true
-			m.modifier = rune(upperMods[i])
-		} else if len(lowerMods) > i && !unicode.IsSpace(rune(lowerMods[i])) {
+			m.modifier = chAbove
+		} else if runeIsMod(chBelow) {
 			m.modifierIsAboveNum = false
-			m.modifier = rune(lowerMods[i])
-		} else { // there must be no modifier
-			return lines, elem, fmt.Errorf("no melody modifier for the melody")
+			m.modifier = chBelow
 		}
 
 		// ensure that the melody modifier has a valid rune
-		if !(m.modifier == '.' || m.modifier == '-' || m.modifier == '~') {
+		if unicode.IsSpace(m.modifier) {
+			return lines, elem, fmt.Errorf("no melody modifier for the melody")
+		}
+		if !runeIsMod(m.modifier) {
 			return lines, elem, fmt.Errorf(
-				"bad modifier not '.', '-', or '~' (have %v)", m.modifier)
+				"bad modifier not '%s', '%s', or '%s' (have %v)",
+				mod1, mod2, mod3, m.modifier)
 		}
 
 		slm.melodies = append(slm.melodies, m)
@@ -895,14 +943,14 @@ func (s singleLineMelody) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 
 		// print modifier
 		switch melody.modifier {
-		case '.':
+		case mod1:
 			xMod := xNum + melodyFontW/2
 			yMod := yNum + melodyHPadding*1.5
 			if melody.modifierIsAboveNum {
 				yMod = yNum - melodyFontH - melodyHPadding/1.5
 			}
 			pdf.Circle(xMod, yMod, melodyHPadding/1.5, "F")
-		case '-':
+		case mod2:
 			xModStart := xNum
 			xModEnd := xNum + melodyFontW
 			yMod := yNum + melodyHPadding
@@ -911,7 +959,7 @@ func (s singleLineMelody) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 			}
 			pdf.SetLineWidth(thinishLW)
 			pdf.Line(xModStart, yMod, xModEnd, yMod)
-		case '~':
+		case mod3:
 			xModStart := xNum
 			xModMid := xNum + melodyFontW/2
 			xModEnd := xNum + melodyFontW
@@ -926,8 +974,21 @@ func (s singleLineMelody) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 		default:
 			panic(fmt.Errorf("unknown modifier %v", melody.modifier))
 		}
+
+		// print extra decorations
+		switch melody.extra {
+		case extraBrac:
+
+			xBrac1 := xLyricStart + float64(i)*fontW*0.5 + melodyWPadding
+			xBrac2 := xLyricStart + float64(i)*fontW*1.5 + melodyWPadding
+			pdf.Text(xBrac1, yNum, "(")
+			pdf.Text(xBrac2, yNum, ")")
+
+			//XXX rest of melodies
+
+		}
 	}
-	// the greatest use of height is from the midpoint of the ~ modifier
+	// the greatest use of height is from the midpoint of the mod3 modifier
 	usedHeight += melodyHPadding/2 + melodyHPadding*3
 
 	return bounds{bnd.top + usedHeight, bnd.left, bnd.bottom, bnd.right}
@@ -1145,12 +1206,12 @@ func getPlaybackTimeFromLine(line string) (pt playbackTime, found bool) {
 	}
 
 	// get the time in the golang time format
-	dur := time.Minute * mins
-	dur += time.Second * secs
-	dur += time.Millisecond * 10 * centiSecs
+	dur := time.Minute * time.Duration(mins)
+	dur += time.Second * time.Duration(secs)
+	dur += time.Millisecond * 10 * time.Duration(centiSecs)
 	t := time.Time{}.Add(dur)
 
-	return pt{
+	return playbackTime{
 		mins:      uint8(mins),
 		secs:      uint8(secs),
 		centiSecs: uint8(centiSecs),
@@ -1161,7 +1222,7 @@ func getPlaybackTimeFromLine(line string) (pt playbackTime, found bool) {
 
 func (s singleAnnotatedSine) parseText(lines []string) (reduced []string, elem tssElement, err error) {
 
-	sas, _, err := s.IsTopLineSine(lines)
+	sas, _, err := IsTopLineSine(lines)
 	if err != nil {
 		return lines, elem, err
 	}
