@@ -3,6 +3,7 @@ package commands
 import (
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"math"
 	"os"
 	"strconv"
@@ -61,6 +62,13 @@ TODO
 - make new file format (and search using qu OR in the current directory for files
   with this new type)
 - break this program out to a new repo
+
+- extras for melody
+  - '_' for steadyness (streches beyond note)
+  - 'v' for vibrato
+  - 'V' for intense vibrato
+  - '|' for halting singing
+  - ability to combine '_', 'v', 'V' and '|'
 */
 
 var (
@@ -71,17 +79,10 @@ var (
 		RunE:  songsheetFilledCmd,
 	}
 
-	SongsheetPlaybackCmd = &cobra.Command{
-		Use:   "songsheet-filled-playback [qu-id] [cursor-x] [cursor-y]",
-		Short: "move the vim cursor to account for time passed after 1/4 of a sine duration",
-		Args:  cobra.ExactArgs(2),
-		RunE:  songsheetPlaybackCmd,
-	}
-
 	SongsheetPlaybackTimeCmd = &cobra.Command{
-		Use:   "songsheet-filled-playback-time [qu-id] [cursor-x] [cursor-y]",
+		Use:   "songsheet-filled-playback-time [filepath] [cursor-x] [cursor-y]",
 		Short: "return the playback time (mm:ss:[cs][cs]) for the current position",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.ExactArgs(3),
 		RunE:  songsheetPlaybackTimeCmd,
 	}
 
@@ -116,48 +117,24 @@ func init() {
 	RootCmd.AddCommand(SongsheetPlaybackTimeCmd)
 }
 
-func songsheetPlaybackCmd(cmd *cobra.Command, args []string) error {
-	output, err := songsheetPlayback(cmd, args, false, true)
-	fmt.Printf(output)
-	return err
-}
-
-func songsheetPlaybackTimeCmd(cmd *cobra.Command, args []string) error {
-	output, err := songsheetPlayback(cmd, args, true, false)
-	fmt.Printf(output)
-	return err
-
-}
-
-func songsheetPlayback(cmd *cobra.Command, args []string, getTime, getMovement bool) (
+func songsheetPlaybackTimeCmd(cmd *cobra.Command, args []string) (
 	output string, err error) {
 
-	if getTime && getMovement || (!getTime && !getMovement) {
-		panic("bad use of command one and only one must be true")
-	}
-
-	initTime := time.Now()
-
 	// get the relevant file
-	quid, err := strconv.Atoi(args[0])
+	content, err := ioutil.ReadFile(args[0])
 	if err != nil {
-		return err.Error(), err
-	}
-	content, found := quac.GetContentByID(uint32(quid))
-	if !found {
-		err = fmt.Errorf("could not find anything under id: %v", quid)
-		return err.Error(), err
+		return "", err
 	}
 	lines := strings.Split(string(content), "\n")
 
 	curX, err := strconv.Atoi(args[1])
 	if err != nil {
-		return err.Error(), err
+		return "", err
 	}
 
 	curY, err := strconv.Atoi(args[2])
 	if err != nil {
-		return err.Error(), err
+		return "", err
 	}
 
 	// Determine the adjacent time markers,
@@ -176,8 +153,8 @@ func songsheetPlayback(cmd *cobra.Command, args []string, getTime, getMovement b
 	for {
 		workingLines := lines[yI:]
 		_, sasEl, err := el.parseText(workingLines)
-		sas := sasEl.(singleAnnotatedSine)
 		if err == nil {
+			sas := sasEl.(singleAnnotatedSine)
 			ls := lineAndSas{yI, sas}
 			surrSas = append([]lineAndSas{ls}, surrSas...)
 			if middleSasLineNo == -1 {
@@ -199,8 +176,8 @@ func songsheetPlayback(cmd *cobra.Command, args []string, getTime, getMovement b
 	for {
 		workingLines := lines[yI:]
 		_, sasEl, err := el.parseText(workingLines)
-		sas := sasEl.(singleAnnotatedSine)
 		if err == nil {
+			sas := sasEl.(singleAnnotatedSine)
 			ls := lineAndSas{yI, sas}
 			surrSas = append(surrSas, ls)
 			if sas.hasPlaybackTime {
@@ -216,15 +193,15 @@ func songsheetPlayback(cmd *cobra.Command, args []string, getTime, getMovement b
 	// check that the first and last elements have playback times
 	if len(surrSas) <= 1 {
 		err = errors.New("not enough sas's to determine the playback times")
-		return err.Error(), err
+		return "", err
 	}
 	if !surrSas[0].sas.hasPlaybackTime {
 		err = errors.New("first sas doesn't have playback time")
-		return err.Error(), err
+		return "", err
 	}
 	if !surrSas[len(surrSas)-1].sas.hasPlaybackTime {
 		err = errors.New("last sas doesn't have playback time")
-		return err.Error(), err
+		return "", err
 	}
 	ptFirst, ptLast := surrSas[0].sas.pt, surrSas[len(surrSas)-1].sas.pt
 
@@ -234,13 +211,27 @@ func songsheetPlayback(cmd *cobra.Command, args []string, getTime, getMovement b
 		totalHumps += s.sas.humps
 	}
 
+	// determine the total humps to the current position
+	humpsBeforeMid := 0.0
+	for i := 0; i <= middleSasIndex; i++ {
+		s := surrSas[i]
+		if i == middleSasIndex {
+			humpsBeforeMid += curX / charsToaHump
+		} else {
+			humpsBeforeMid += s.sas.humps
+		}
+	}
+
 	// determine the duration of time passing per hump
 	totalDur := float64(ptLast.t.Sub(ptFirst.t))
-	durPerOneForthHump := time.Duration((totalDur / totalHumps) / float64(charsToaHump))
+	durPerHump := time.Duration(totalDur / totalHumps)
 
-	endCalcTime := time.Now()
-	diffTime := endCalcTime.Sub(initTime)
+	// determine the playback time at the current hump
+	elapsedFromPtFirst := humpsBeforeMid * durPerHump
+	ptOut := ptFirst.AddDur(elapsedFromPtFirst)
+	return ptOut.str, nil
 
+	/* OLD CODE for cursor movement (abandoned)
 	// potentially have to move more than one
 	// character if this calculation has taken to long
 	charMovements := 1
@@ -259,18 +250,19 @@ func songsheetPlayback(cmd *cobra.Command, args []string, getTime, getMovement b
 	// set the position of the cursor
 	// -1 because so that first position is 1
 	if endReached {
-		output = fmt.Sprintf("<esc>")
+		output = fmt.Sprintf("END")
 		return output, nil
 	}
 
-	output = fmt.Sprintf("%vgg%vl", finalCurY, (finalCurX - 1))
+	output = fmt.Sprintf("%vgg%vlR \\<esc>", finalCurY, (finalCurX - 1))
 	return output, nil
+	*/
 }
 
 var (
 	// line offset from the top of a text-sine (with chords and
 	// everything) to the middle of the text-based-sine-curve
-	lineNoOffsetToMiddleHump = 2
+	lineNoOffsetToMiddleHump = 3
 
 	charsToaHump = 4.0 // 4 character positions to a hump in a text-based sine wave
 )
@@ -1388,9 +1380,24 @@ func IsTopLineSine(lines []string) (sas singleAnnotatedSine, yesitis bool, err e
 type playbackTime struct {
 	mins      uint8
 	secs      uint8
-	centiSecs uint8  // 1/100th of a second
-	str       string // string representation
-	t         time.Time
+	centiSecs uint8 // 1/100th of a second
+	// string representation
+	//   mn:se.cs
+	// where
+	//   mn = minutes
+	//   se = seconds
+	//   cs = centi-seconds (1/100th of a second)
+	str string // string representation
+	t   time.Time
+}
+
+func (pt playbackTime) AddDur(d time.Duration) (ptOut playbackTime) {
+	ptOut.t = pt.t(d)
+	ptOut.mins = t.mins + uint8(math.Trunc(d.Minutes()))
+	ptOut.secs = t.secs + uint8(math.Trunc(d.Seconds()))
+	ptOut.centiSecs = t.centiSecs + uint8(d.Milliseconds()/10)
+	ptOut.str = fmt.Sprintf("%v:%v.%v",
+		ptOut.mins, ptOut.secs, ptOut.centiSecs)
 }
 
 // 00:00.00
