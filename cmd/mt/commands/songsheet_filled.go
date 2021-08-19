@@ -86,6 +86,27 @@ var (
 		RunE:  songsheetPlaybackTimeCmd,
 	}
 
+	IsSongsheetCmd = &cobra.Command{
+		Use:   "is-songsheet [filepath]",
+		Short: "print TRUE or FALSE if the file is a songsheet",
+		Args:  cobra.ExactArgs(1),
+		RunE:  isSongsheetCmd,
+	}
+
+	GetSongsheetAudioCmd = &cobra.Command{
+		Use:   "songsheet-audio [filepath]",
+		Short: "print the audio filepath if exists or allocate a new file if it doesn't",
+		Args:  cobra.ExactArgs(1),
+		RunE:  getSongsheetAudioCmd,
+	}
+
+	HasSongsheetAudioCmd = &cobra.Command{
+		Use:   "songsheet-has-audio [filepath]",
+		Short: "print TRUE or FALSE if the file has associated audio",
+		Args:  cobra.ExactArgs(1),
+		RunE:  hasSongsheetAudioCmd,
+	}
+
 	lyricFontPt  float64
 	longestHumps float64
 
@@ -113,28 +134,139 @@ func init() {
 		&sineAmplitudeRatioFlag, "amp-ratio", 0.8,
 		"ratio of amplitude of the sine curve to the lyric text")
 	RootCmd.AddCommand(SongsheetFilledCmd)
-	RootCmd.AddCommand(SongsheetPlaybackCmd)
 	RootCmd.AddCommand(SongsheetPlaybackTimeCmd)
+	RootCmd.AddCommand(IsSongsheetCmd)
+	RootCmd.AddCommand(GetSongsheetAudioCmd)
+	RootCmd.AddCommand(HasSongsheetAudioCmd)
 }
 
-func songsheetPlaybackTimeCmd(cmd *cobra.Command, args []string) (
-	output string, err error) {
+func isSongsheetCmd(cmd *cobra.Command, args []string) error {
+	filepath := args[0]
+	if strings.Contains(filepath, "songsheet") {
+		fmt.Printf("TRUE")
+		return nil
+	}
+	fmt.Printf("FALSE")
+	return nil
+}
+
+const (
+	audioLinePrefix = "// AUDIO-ID="
+)
+
+func hasSongsheetAudio(lines []string) (yesitdoes bool, audiofilepath string, err error) {
+	for _, line := range lines {
+		if strings.HasPrefix(line, audioLinePrefix) {
+			quidStr := strings.TrimPrefix(line, audioLinePrefix)
+			quid, err := strconv.Atoi(quidStr)
+			if err != nil {
+				return false, "", err
+			}
+			audiofilepath, found := quac.GetFilepathByID(uint32(quid))
+			if !found {
+				return false, "", nil
+			}
+			return true, audiofilepath, nil
+		}
+	}
+	return false, "", nil
+}
+
+func hasSongsheetAudioCmd(cmd *cobra.Command, args []string) error {
+	content, err := ioutil.ReadFile(args[0])
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(content), "\n")
+	has, _, err := hasSongsheetAudio(lines)
+	if err != nil {
+		fmt.Printf("FALSE")
+		return err
+	}
+	if has {
+		fmt.Printf("TRUE")
+	} else {
+		fmt.Printf("FALSE")
+	}
+	return nil
+}
+
+func getSongsheetAudioCmd(cmd *cobra.Command, args []string) error {
+	content, err := ioutil.ReadFile(args[0])
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(content), "\n")
+
+	has, filepath, err := hasSongsheetAudio(lines)
+	if err != nil {
+		return err
+	}
+	if has {
+		fmt.Printf(filepath)
+		return nil
+	}
+
+	// if not found allocate a new file for this purpose
+	// and add it to the songsheet
+	origIdea := quac.NewIdeaFromFilename(args[0], false)
+	clumpedTags := origIdea.GetClumpedTags()
+	// add the original tags to this new entry
+	audioFilepath, quID := quac.NewEmptyAudioEntry(clumpedTags)
+	newLine := fmt.Sprintf("%v%v", audioLinePrefix, quID)
+	content = []byte(newLine + "\n" + string(content))
+	err = ioutil.WriteFile(args[0], content, 0666)
+	if err != nil {
+		return err
+	}
+	fmt.Printf(audioFilepath)
+	return nil
+}
+
+func deleteComments(lines []string) (out []string) {
+LOOP:
+	for _, line := range lines {
+		switch {
+		// do not include this line
+		case strings.HasPrefix(line, "//"):
+			continue LOOP
+
+		// take everything before the comment
+		case strings.Contains(line, "//"):
+			splt := strings.SplitN(line, "//", 2)
+			if len(splt) != 2 {
+				panic("something wrong with strings library")
+			}
+			out = append(out, splt[0])
+			continue LOOP
+		default:
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+func songsheetPlaybackTimeCmd(cmd *cobra.Command, args []string) error {
 
 	// get the relevant file
 	content, err := ioutil.ReadFile(args[0])
 	if err != nil {
-		return "", err
+		fmt.Printf("BAD-PLAYBACK-TIME")
+		return err
 	}
 	lines := strings.Split(string(content), "\n")
+	lines = deleteComments(lines)
 
 	curX, err := strconv.Atoi(args[1])
 	if err != nil {
-		return "", err
+		fmt.Printf("BAD-PLAYBACK-TIME")
+		return err
 	}
 
 	curY, err := strconv.Atoi(args[2])
 	if err != nil {
-		return "", err
+		fmt.Printf("BAD-PLAYBACK-TIME")
+		return err
 	}
 
 	// Determine the adjacent time markers,
@@ -192,16 +324,19 @@ func songsheetPlaybackTimeCmd(cmd *cobra.Command, args []string) (
 
 	// check that the first and last elements have playback times
 	if len(surrSas) <= 1 {
+		fmt.Printf("BAD-PLAYBACK-TIME")
 		err = errors.New("not enough sas's to determine the playback times")
-		return "", err
+		return err
 	}
 	if !surrSas[0].sas.hasPlaybackTime {
+		fmt.Printf("BAD-PLAYBACK-TIME")
 		err = errors.New("first sas doesn't have playback time")
-		return "", err
+		return err
 	}
 	if !surrSas[len(surrSas)-1].sas.hasPlaybackTime {
+		fmt.Printf("BAD-PLAYBACK-TIME")
 		err = errors.New("last sas doesn't have playback time")
-		return "", err
+		return err
 	}
 	ptFirst, ptLast := surrSas[0].sas.pt, surrSas[len(surrSas)-1].sas.pt
 
@@ -216,7 +351,7 @@ func songsheetPlaybackTimeCmd(cmd *cobra.Command, args []string) (
 	for i := 0; i <= middleSasIndex; i++ {
 		s := surrSas[i]
 		if i == middleSasIndex {
-			humpsBeforeMid += curX / charsToaHump
+			humpsBeforeMid += float64(curX) / charsToaHump
 		} else {
 			humpsBeforeMid += s.sas.humps
 		}
@@ -227,9 +362,10 @@ func songsheetPlaybackTimeCmd(cmd *cobra.Command, args []string) (
 	durPerHump := time.Duration(totalDur / totalHumps)
 
 	// determine the playback time at the current hump
-	elapsedFromPtFirst := humpsBeforeMid * durPerHump
+	elapsedFromPtFirst := time.Duration(humpsBeforeMid * float64(durPerHump))
 	ptOut := ptFirst.AddDur(elapsedFromPtFirst)
-	return ptOut.str, nil
+	fmt.Printf(ptOut.str)
+	return nil
 
 	/* OLD CODE for cursor movement (abandoned)
 	// potentially have to move more than one
@@ -328,6 +464,7 @@ func songsheetFilledCmd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("could not find anything under id: %v", quid)
 	}
 	lines := strings.Split(string(content), "\n")
+	lines = deleteComments(lines)
 
 	// get the header
 	lines, hc, err := parseHeader(lines)
@@ -1392,12 +1529,13 @@ type playbackTime struct {
 }
 
 func (pt playbackTime) AddDur(d time.Duration) (ptOut playbackTime) {
-	ptOut.t = pt.t(d)
-	ptOut.mins = t.mins + uint8(math.Trunc(d.Minutes()))
-	ptOut.secs = t.secs + uint8(math.Trunc(d.Seconds()))
-	ptOut.centiSecs = t.centiSecs + uint8(d.Milliseconds()/10)
+	ptOut.t = pt.t.Add(d)
+	ptOut.mins = pt.mins + uint8(math.Trunc(d.Minutes()))
+	ptOut.secs = pt.secs + uint8(math.Trunc(d.Seconds()))
+	ptOut.centiSecs = pt.centiSecs + uint8(d.Milliseconds()/10)
 	ptOut.str = fmt.Sprintf("%v:%v.%v",
 		ptOut.mins, ptOut.secs, ptOut.centiSecs)
+	return ptOut
 }
 
 // 00:00.00
