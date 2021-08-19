@@ -1525,14 +1525,13 @@ func IsTopLineSine(lines []string) (sas singleAnnotatedSine, yesitis bool, err e
 type playbackTime struct {
 	mins      uint8
 	secs      uint8
-	centiSecs uint8 // 1/100th of a second
+	centiSecs uint8 // 1/100th of a second // TODO delete these 3 lines?
 	// string representation
 	//   mn:se.cs
 	// where
 	//   mn = minutes
 	//   se = seconds
 	//   cs = centi-seconds (1/100th of a second)
-	// NOTE internally within AddDur this is just decimal seconds
 	str string // string representation
 	t   time.Time
 }
@@ -1540,7 +1539,12 @@ type playbackTime struct {
 func (pt playbackTime) AddDur(d time.Duration) (ptOut playbackTime) {
 	ptOut.t = pt.t.Add(d)
 	newDur := ptOut.t.Sub(time.Time{})
-	ptOut.str = fmt.Sprintf("%v", newDur.Seconds())
+
+	minsFl := math.Trunc(newDur.Seconds() / 60)
+	minsStr := fmt.Sprintf("%02v", minsFl)
+	secsFl := newDur.Seconds() - 60*minsFl
+	secsStr := fmt.Sprintf("%05v", strconv.FormatFloat(secsFl, 'f', 2, 64))
+	ptOut.str = fmt.Sprintf("%v:%v", minsStr, secsStr) // secsStr contains two decimals
 	return ptOut
 }
 
