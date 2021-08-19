@@ -269,6 +269,9 @@ func songsheetPlaybackTimeCmd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// XXX broken if this is on the last night which also
+	// happens to have a time marker
+
 	// Determine the adjacent time markers,
 	// scan outward from this position to
 	// find the previous and next ones.
@@ -1370,7 +1373,9 @@ func (s singleLineLyrics) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 	fontH := GetFontHeight(lyricFontPt)
 	fontW := GetCourierFontWidthFromHeight(fontH)
 	xLyricStart := bnd.left - fontW/2 // - because of slight right shift in sine annotations
-	yLyric := bnd.top + 1.3*fontH     // 3/2 because of tall characters extending beyond height calculation
+
+	// 3/2 because of tall characters extending beyond height calculation
+	yLyric := bnd.top + 1.3*fontH
 
 	// the lyrics could just be printed in one go,
 	// however do to the inaccuracies of determining
@@ -1412,13 +1417,13 @@ func GetCourierFontHeightFromWidth(width float64) float64 {
 type singleAnnotatedSine struct {
 	hasPlaybackTime bool
 	pt              playbackTime
+	ptHumpsPosition float64 // number of humps to the playback position // XXX
 	humps           float64
 	trailingHumps   float64 // the sine curve reduces its amplitude to zero during these
 	alongAxis       []sineAnnotation
 	alongSine       []sineAnnotation
 }
 
-// Dummiii TODO
 func (sas singleAnnotatedSine) totalHumps() float64 {
 	return sas.humps + sas.trailingHumps
 }
@@ -1530,11 +1535,16 @@ type playbackTime struct {
 
 func (pt playbackTime) AddDur(d time.Duration) (ptOut playbackTime) {
 	ptOut.t = pt.t.Add(d)
-	ptOut.mins = pt.mins + uint8(math.Trunc(d.Minutes()))
-	ptOut.secs = pt.secs + uint8(math.Trunc(d.Seconds()))
-	ptOut.centiSecs = pt.centiSecs + uint8(d.Milliseconds()/10)
-	ptOut.str = fmt.Sprintf("%v:%v.%v",
-		ptOut.mins, ptOut.secs, ptOut.centiSecs)
+
+	//ptOut.mins = pt.mins + uint8(math.Trunc(d.Minutes()))
+	//ptOut.secs = pt.secs + uint8(math.Trunc(d.Seconds()))
+	//ptOut.centiSecs = pt.centiSecs + uint8(d.Milliseconds()/10)
+	//ptOut.str = fmt.Sprintf("%v:%v.%v",
+	//ptOut.mins, ptOut.secs, ptOut.centiSecs)
+
+	origDur := ptOut.t.Sub(time.Time{})
+	ptOut.str = fmt.Sprintf("%v", origDur.Seconds()+d.Seconds())
+
 	return ptOut
 }
 
