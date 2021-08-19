@@ -278,7 +278,7 @@ func songsheetPlaybackTimeCmd(cmd *cobra.Command, args []string) error {
 		if err == nil {
 			sas := sasEl.(singleAnnotatedSine)
 			ls := lineAndSas{int16(yI), sas}
-			surrSas = append([]lineAndSas{ls}, surrSas...)
+			surrSas = append(surrSas, ls)
 		}
 	}
 	// determine the sas belonging to the cursor
@@ -287,8 +287,9 @@ func songsheetPlaybackTimeCmd(cmd *cobra.Command, args []string) error {
 		if curY < int(s.lineNo) {
 			if i > 0 {
 				curI = i - 1
+			} else {
+				curI = 0
 			}
-			curI = 0
 			break
 		}
 	}
@@ -310,47 +311,49 @@ func songsheetPlaybackTimeCmd(cmd *cobra.Command, args []string) error {
 			}
 			charPoss = append(charPoss, cp)
 
-			if i == curI && j == curX {
+			if i == curI && j == curX-1 {
 				curPosInCharPoss = len(charPoss) - 1
 			}
 		}
 	}
-	fmt.Printf("debug len(charPoss): %v\n", len(charPoss))
+
+	// shortcut if on a playback time
+	if charPoss[curPosInCharPoss].hasPT {
+		cp := charPoss[curPosInCharPoss]
+		fmt.Printf(cp.pt.str)
+		return nil
+	}
 
 	// get the first and last playback times surrounding the cursor
 	var ptFirst, ptLast playbackTime
 	ptFirstFound, ptLastFound := false, false
 	charsBetweenCurAndFirstPT, charsBetweenCurAndLastPT := 0, 0
 	for i := curPosInCharPoss; i >= 0; i-- {
-		charsBetweenCurAndFirstPT++
 		cp := charPoss[i]
 		if cp.hasPT {
 			ptFirst = cp.pt
 			ptFirstFound = true
 			break
 		}
+		charsBetweenCurAndFirstPT++
 	}
-	fmt.Printf("debug curPosInCharPoss: %v\n", curPosInCharPoss)
 	for i := curPosInCharPoss; i < len(charPoss); i++ {
-		charsBetweenCurAndLastPT++
 		cp := charPoss[i]
 		if cp.hasPT {
 			ptLast = cp.pt
 			ptLastFound = true
 			break
 		}
+		charsBetweenCurAndLastPT++
 	}
 	if !ptFirstFound || !ptLastFound {
 		fmt.Printf("BAD-PLAYBACK-TIME")
 		return nil
 	}
-	fmt.Printf("debug ptFirst Seconds: %v\n", ptFirst.t.Sub(time.Time{}).Seconds())
-	fmt.Printf("debug ptLast Seconds: %v\n", ptLast.t.Sub(time.Time{}).Seconds())
 	totalCharsBetweenFirstAndLastPT := charsBetweenCurAndFirstPT + charsBetweenCurAndLastPT
 
 	// determine the duration of time passing per hump
 	totalDur := ptLast.t.Sub(ptFirst.t)
-	fmt.Printf("debug totalDur: %v\n", totalDur.Seconds())
 	durPerChar := float64(totalDur) / float64(totalCharsBetweenFirstAndLastPT)
 
 	// determine the playback time at the current hump
@@ -1526,8 +1529,8 @@ type playbackTime struct {
 
 func (pt playbackTime) AddDur(d time.Duration) (ptOut playbackTime) {
 	ptOut.t = pt.t.Add(d)
-	origDur := ptOut.t.Sub(time.Time{})
-	ptOut.str = fmt.Sprintf("%v", origDur.Seconds()+d.Seconds())
+	newDur := ptOut.t.Sub(time.Time{})
+	ptOut.str = fmt.Sprintf("%v", newDur.Seconds())
 	return ptOut
 }
 
@@ -1555,7 +1558,7 @@ func getPlaybackTimeFromLine(line string) (pt playbackTime, ptCharPosition int, 
 	if err != nil {
 		return pt, 0, false
 	}
-	centiSecs, err := strconv.Atoi(spl2[0])
+	centiSecs, err := strconv.Atoi(spl2[1])
 	if err != nil {
 		return pt, 0, false
 	}
