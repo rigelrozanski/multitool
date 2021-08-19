@@ -255,7 +255,9 @@ func songsheetPlaybackTimeCmd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	lines := strings.Split(string(content), "\n")
+	origLenLines := len(lines)
 	lines = deleteComments(lines)
+	commentLines := origLenLines - len(lines)
 
 	curX, err := strconv.Atoi(args[1])
 	if err != nil {
@@ -268,6 +270,7 @@ func songsheetPlaybackTimeCmd(cmd *cobra.Command, args []string) error {
 		fmt.Printf("BAD-PLAYBACK-TIME")
 		return err
 	}
+	curY -= commentLines
 
 	// get the list of all sasses
 	var surrSas lineAndSasses
@@ -283,14 +286,21 @@ func songsheetPlaybackTimeCmd(cmd *cobra.Command, args []string) error {
 	}
 	// determine the sas belonging to the cursor
 	curI := 0
+LOOP:
 	for i, s := range surrSas {
-		if curY < int(s.lineNo) {
-			if i > 0 {
-				curI = i - 1
-			} else {
-				curI = 0
-			}
-			break
+		switch {
+		case (curY - 1) == int(s.lineNo):
+			curI = i
+			break LOOP
+		case i == 0 && (curY-1) < int(s.lineNo):
+			curI = 0
+			break LOOP
+		case i > 0 && (curY-1) < int(s.lineNo):
+			curI = i - 1
+			break LOOP
+		case i == len(surrSas)-1 && (curY-1) > int(s.lineNo):
+			curI = i
+			break LOOP
 		}
 	}
 
@@ -305,7 +315,7 @@ func songsheetPlaybackTimeCmd(cmd *cobra.Command, args []string) error {
 		maxChars := int((s.sas.totalHumps() * charsToaHump) + 0.00001) // float rounding
 		for j := 0; j < maxChars; j++ {
 			cp := charPos{}
-			if s.sas.ptCharPosition == j {
+			if s.sas.hasPlaybackTime && s.sas.ptCharPosition == j {
 				cp.hasPT = true
 				cp.pt = s.sas.pt
 			}
