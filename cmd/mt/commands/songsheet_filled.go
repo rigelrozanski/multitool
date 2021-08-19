@@ -269,103 +269,87 @@ func songsheetPlaybackTimeCmd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// XXX broken if this is on the last night which also
-	// happens to have a time marker
-
-	// Determine the adjacent time markers,
-	// scan outward from this position to
-	// find the previous and next ones.
-
-	// the middle sas is the sas which the cursor is
-	// considered to be nearest to... it is from
-	// this line that the cursor movements will occur
-	middleSasLineNo := int16(-1)
-
-	// moving backwards
-	yI := int16(curY)
+	// get the list of all sasses
 	var surrSas lineAndSasses
 	el := singleAnnotatedSine{} // dummy element to make the call
-	for {
+	for yI := 0; yI < len(lines); yI++ {
 		workingLines := lines[yI:]
 		_, sasEl, err := el.parseText(workingLines)
 		if err == nil {
 			sas := sasEl.(singleAnnotatedSine)
 			ls := lineAndSas{yI, sas}
 			surrSas = append([]lineAndSas{ls}, surrSas...)
-			if middleSasLineNo == -1 {
-				middleSasLineNo = yI + int16(lineNoOffsetToMiddleHump)
-			}
-			if sas.hasPlaybackTime {
-				break
-			}
-		}
-		yI--
-		if yI < 0 {
-			break
 		}
 	}
-	middleSasIndex := len(surrSas) - 1
-
-	// moving forwards
-	yI = int16(curY)
-	for {
-		workingLines := lines[yI:]
-		_, sasEl, err := el.parseText(workingLines)
-		if err == nil {
-			sas := sasEl.(singleAnnotatedSine)
-			ls := lineAndSas{yI, sas}
-			surrSas = append(surrSas, ls)
-			if sas.hasPlaybackTime {
-				break
+	// determine the sas belonging to the cursor
+	curI := 0
+	for i, s := range surrSas {
+		if curY < s.lineNo {
+			if i > 0 {
+				curI = i - 1
 			}
-		}
-		yI++
-		if int(yI) >= len(lines) {
+			curI = 0
 			break
 		}
 	}
 
-	// check that the first and last elements have playback times
-	if len(surrSas) <= 1 {
-		fmt.Printf("BAD-PLAYBACK-TIME")
-		err = errors.New("not enough sas's to determine the playback times")
-		return err
+	// convert the sasses into an array of characters
+	type charPos struct {
+		hasPT bool
+		pt    playbackTime
 	}
-	if !surrSas[0].sas.hasPlaybackTime {
-		fmt.Printf("BAD-PLAYBACK-TIME")
-		err = errors.New("first sas doesn't have playback time")
-		return err
-	}
-	if !surrSas[len(surrSas)-1].sas.hasPlaybackTime {
-		fmt.Printf("BAD-PLAYBACK-TIME")
-		err = errors.New("last sas doesn't have playback time")
-		return err
-	}
-	ptFirst, ptLast := surrSas[0].sas.pt, surrSas[len(surrSas)-1].sas.pt
+	curPosInCharPoss := 0
+	charPoss := []charPos{}
+	for i, s := range surrSas {
+		maxChars := int((s.sas.totalHumps() * charsToaHump) + 0.00001) // float rounding
+		for j := 0; j < maxChar; j++ {
+			cp := charPos{}
+			if s.sas.ptCharPosition == j {
+				cp.hasPT = true
+				cp.pt = s.sas.pt
+			}
+			charPoss = append(charPoss, cp)
 
-	// determine the total number of sine humps we're dealing with
-	totalHumps := 0.0
-	for _, s := range surrSas {
-		totalHumps += s.sas.humps
-	}
-
-	// determine the total humps to the current position
-	humpsBeforeMid := 0.0
-	for i := 0; i <= middleSasIndex; i++ {
-		s := surrSas[i]
-		if i == middleSasIndex {
-			humpsBeforeMid += float64(curX) / charsToaHump
-		} else {
-			humpsBeforeMid += s.sas.humps
+			if i == curI && j == curX {
+				curPosInCharPoss = len(charPoss) - 1
+			}
 		}
 	}
+
+	// get the first and last playback times surrounding the cursor
+	var ptFirst, ptLast playbackTime
+	ptFirstFound, ptLastFound := false, false
+	charsBetweenCurAndFirstPT, charsBetweenCurAndLastPT := 0, 0
+	for i := curPosInCharPoss; i >= 0; i-- {
+		charsBetweenCurAndFirstPT++
+		cp := charPoss[i]
+		if cp.hasPT {
+			ptFirst = cp.pt
+			ptFirstFound = true
+			break
+		}
+	}
+	for i := curPosInCharPoss; i < len(charPoss); i++ {
+		charsBetweenCurAndLastPT++
+		cp := charPoss[i]
+		if cp.hasPT {
+			ptLast = cp.pt
+			ptLastFound = true
+			break
+		}
+	}
+	if !ptFirstFound || !ptLastFound {
+		fmt.Printf("BAD-PLAYBACK-TIME")
+		return nil
+	}
+	totalCharsBetweenFirstAndLastPT := charsBetweenCurAndFirstPT + charsBetweenCurAndLastPT
 
 	// determine the duration of time passing per hump
-	totalDur := float64(ptLast.t.Sub(ptFirst.t))
-	durPerHump := time.Duration(totalDur / totalHumps)
+	totalDur := ptLast.t.Sub(ptFirst.t)
+	durPerChar := float64(totalDur) / float64(totalCharsBetweenFirstAndLastPT)
 
 	// determine the playback time at the current hump
-	elapsedFromPtFirst := time.Duration(humpsBeforeMid * float64(durPerHump))
+	elapsedFromPtFirst := time.Duration(float64(charsBetweenCurAndFirstPT) * durPerChar)
 	ptOut := ptFirst.AddDur(elapsedFromPtFirst)
 	fmt.Printf(ptOut.str)
 	return nil
@@ -1417,7 +1401,7 @@ func GetCourierFontHeightFromWidth(width float64) float64 {
 type singleAnnotatedSine struct {
 	hasPlaybackTime bool
 	pt              playbackTime
-	ptHumpsPosition float64 // number of humps to the playback position // XXX
+	ptCharPosition  int // number of humps to the playback position
 	humps           float64
 	trailingHumps   float64 // the sine curve reduces its amplitude to zero during these
 	alongAxis       []sineAnnotation
@@ -1529,27 +1513,20 @@ type playbackTime struct {
 	//   mn = minutes
 	//   se = seconds
 	//   cs = centi-seconds (1/100th of a second)
+	// NOTE internally within AddDur this is just decimal seconds
 	str string // string representation
 	t   time.Time
 }
 
 func (pt playbackTime) AddDur(d time.Duration) (ptOut playbackTime) {
 	ptOut.t = pt.t.Add(d)
-
-	//ptOut.mins = pt.mins + uint8(math.Trunc(d.Minutes()))
-	//ptOut.secs = pt.secs + uint8(math.Trunc(d.Seconds()))
-	//ptOut.centiSecs = pt.centiSecs + uint8(d.Milliseconds()/10)
-	//ptOut.str = fmt.Sprintf("%v:%v.%v",
-	//ptOut.mins, ptOut.secs, ptOut.centiSecs)
-
 	origDur := ptOut.t.Sub(time.Time{})
 	ptOut.str = fmt.Sprintf("%v", origDur.Seconds()+d.Seconds())
-
 	return ptOut
 }
 
 // 00:00.00
-func getPlaybackTimeFromLine(line string) (pt playbackTime, found bool) {
+func getPlaybackTimeFromLine(line string) (pt playbackTime, ptCharPosition int, found bool) {
 	tr := strings.TrimSpace(line)
 	if len(tr) != 8 {
 		return pt, false
@@ -1583,13 +1560,16 @@ func getPlaybackTimeFromLine(line string) (pt playbackTime, found bool) {
 	dur += time.Millisecond * 10 * time.Duration(centiSecs)
 	t := time.Time{}.Add(dur)
 
-	return playbackTime{
+	pt = playbackTime{
 		mins:      uint8(mins),
 		secs:      uint8(secs),
 		centiSecs: uint8(centiSecs),
 		str:       str,
 		t:         t,
-	}, true
+	}
+
+	ptCharPosition := len(line) - len(strings.TrimLeft(line, " "))
+	return pt, ptCharPosition, true
 }
 
 func (s singleAnnotatedSine) parseText(lines []string) (reduced []string, elem tssElement, err error) {
