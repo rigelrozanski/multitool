@@ -131,13 +131,14 @@ func (b bounds) Height() float64 {
 // --------------------------------
 
 type headerContent struct {
-	title   string
-	date    string
-	tuning  string
-	capo    string
-	bpm     string
-	timesig string
-	feel    string
+	title         string
+	titleLine2    string
+	date          string
+	tuning        string
+	capo          string
+	bpm           string
+	timesigTop    string
+	timesigBottom string
 }
 
 func printHeader(pdf *gofpdf.Fpdf, bnd bounds, hc *headerContent) (reducedBounds bounds) {
@@ -178,8 +179,7 @@ func printHeader(pdf *gofpdf.Fpdf, bnd bounds, hc *headerContent) (reducedBounds
 			"TUNING: " + hc.tuning,
 			"CAPO: " + hc.capo,
 			"BPM: " + hc.bpm,
-			"TIMESIG: " + hc.timesig,
-			"FEEL: " + hc.feel,
+			"TIMESIG: " + hc.timesigTop + "/" + hc.timesigBottom,
 		}
 	}
 
