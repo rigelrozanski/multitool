@@ -21,20 +21,6 @@ TODO
 - flags for colours!
   - about the sine curve colours
 - bass line strings annotations
-- chord chart to be able to sqeeze a few more chords in beyond
-  the standard spacing
-- chord chart to be able to go across the top if the squeeze doesn't work
-- move on-sine annotations to either the top or bottom if they
-  directly intersect with a central-axis annotation
-- title font size/multiple lines?
-- create an amplitude decay factor (flag) allow for decays
-  to happen in the middle of sine
-   - also allow for pauses (no sine at all)
-- eliminate cactus prickles where no label exists
-- use of sine instead of cos with different text hump pattern:
-     _
-    / \_
-- allow for comments within a songsheet maybe same style as golang with `//`
 - make new file format (and search using qu OR in the current directory for files
   with this new type)
 - break this program out to a new repo
@@ -167,19 +153,8 @@ func songsheetFillBPMCmd(cmd *cobra.Command, args []string) error {
 	}
 	lines := strings.Split(string(content), "\n")
 
-	// get all the sines
-	// TODO combine with duplicate code further down
-	var surrSas lineAndSasses
-	el := singleAnnotatedSine{} // dummy element to make the call
-	for yI := 0; yI < len(lines); yI++ {
-		workingLines := lines[yI:]
-		_, sasEl, err := el.parseText(workingLines)
-		if err == nil {
-			sas := sasEl.(singleAnnotatedSine)
-			ls := lineAndSas{int16(yI), sas}
-			surrSas = append(surrSas, ls)
-		}
-	}
+	// get the list of all lines and sasses
+	lasses := getLasses(lines)
 
 	// convert the sasses into an array of characters
 	type charPos struct {
@@ -187,7 +162,7 @@ func songsheetFillBPMCmd(cmd *cobra.Command, args []string) error {
 		pt    playbackTime
 	}
 	charPoss := []charPos{}
-	for _, s := range surrSas {
+	for _, s := range lasses {
 		maxChars := int((s.sas.totalHumps() * charsToaHump) + 0.00001) // float rounding
 		for j := 0; j < maxChars; j++ {
 			cp := charPos{}
@@ -320,6 +295,20 @@ LOOP:
 	return out
 }
 
+func getLasses(lines []string) (lasses lineAndSasses) {
+	el := singleAnnotatedSine{} // dummy element to make the call
+	for yI := 0; yI < len(lines); yI++ {
+		workingLines := lines[yI:]
+		_, sasEl, err := el.parseText(workingLines)
+		if err == nil {
+			sas := sasEl.(singleAnnotatedSine)
+			ls := lineAndSas{int16(yI), sas}
+			lasses = append(lasses, ls)
+		}
+	}
+	return lasses
+}
+
 func songsheetPlaybackTimeCmd(cmd *cobra.Command, args []string) error {
 
 	// get the relevant file
@@ -346,22 +335,13 @@ func songsheetPlaybackTimeCmd(cmd *cobra.Command, args []string) error {
 	}
 	curY -= commentLines
 
-	// get the list of all sasses
-	var surrSas lineAndSasses
-	el := singleAnnotatedSine{} // dummy element to make the call
-	for yI := 0; yI < len(lines); yI++ {
-		workingLines := lines[yI:]
-		_, sasEl, err := el.parseText(workingLines)
-		if err == nil {
-			sas := sasEl.(singleAnnotatedSine)
-			ls := lineAndSas{int16(yI), sas}
-			surrSas = append(surrSas, ls)
-		}
-	}
+	// get the list of all lines and sasses
+	lasses := getLasses(lines)
+
 	// determine the sas belonging to the cursor
 	curI := 0
 LOOP:
-	for i, s := range surrSas {
+	for i, s := range lasses {
 		switch {
 		case (curY - 1) == int(s.lineNo):
 			curI = i
@@ -372,7 +352,7 @@ LOOP:
 		case i > 0 && (curY-1) < int(s.lineNo):
 			curI = i - 1
 			break LOOP
-		case i == len(surrSas)-1 && (curY-1) > int(s.lineNo):
+		case i == len(lasses)-1 && (curY-1) > int(s.lineNo):
 			curI = i
 			break LOOP
 		}
@@ -385,7 +365,7 @@ LOOP:
 	}
 	curPosInCharPoss := 0
 	charPoss := []charPos{}
-	for i, s := range surrSas {
+	for i, s := range lasses {
 		maxChars := int((s.sas.totalHumps() * charsToaHump) + 0.00001) // float rounding
 		for j := 0; j < maxChars; j++ {
 			cp := charPos{}
@@ -459,7 +439,7 @@ LOOP:
 	}
 	time.Sleep(finalSleep)
 
-	finalCurX, finalCurY, endReached := surrSas.getNextPosition(
+	finalCurX, finalCurY, endReached := lasses.getNextPosition(
 		curX, middleSasIndex, charMovements)
 
 	// set the position of the cursor
@@ -594,7 +574,7 @@ OUTER:
 	for _, el := range parsedElems {
 		dummy := dummyPdf{}
 		bndNew := el.printPDF(dummy, bndsCols[bndsColsIndex])
-		if bndNew.Height() < padding {
+		if bndNew.Height() < padding/2 {
 			bndsColsIndex++
 			if bndsColsIndex >= len(bndsCols) {
 				return errors.New("song doesn't fit on one sheet " +
@@ -828,6 +808,7 @@ func printHeaderFilled(pdf *gofpdf.Fpdf, bnd bounds, hc *headerContentFilled) (r
 type Pdf interface {
 	SetLineWidth(width float64)
 	SetLineCapStyle(styleStr string)
+	Polygon(points []gofpdf.PointType, styleStr string)
 	Line(x1, y1, x2, y2 float64)
 	SetFont(familyStr, styleStr string, size float64)
 	Text(x, y float64, txtStr string)
@@ -842,6 +823,7 @@ var _ Pdf = dummyPdf{}
 
 func (d dummyPdf) SetLineWidth(width float64)                            {}
 func (d dummyPdf) SetLineCapStyle(styleStr string)                       {}
+func (d dummyPdf) Polygon(points []gofpdf.PointType, styleStr string)    {}
 func (d dummyPdf) Line(x1, y1, x2, y2 float64)                           {}
 func (d dummyPdf) SetFont(familyStr, styleStr string, size float64)      {}
 func (d dummyPdf) Text(x, y float64, txtStr string)                      {}
@@ -857,6 +839,12 @@ type tssElement interface {
 }
 
 // ---------------------
+
+// TODO
+// - chord chart to be able to sqeeze a few more chords in beyond
+//   the standard spacing
+// - chord chart to be able to go across the top if the squeeze doesn't work
+// - eliminate cactus prickles where no label exists
 
 type chordChart struct {
 	chords          []Chord
@@ -1672,6 +1660,25 @@ func GetCourierFontHeightFromWidth(width float64) float64 {
 
 // ---------------------
 
+// TODO
+// - slides between chords (central text):
+//   - use '\' symbol to indicate slide
+//   - faded grey text between this chord and next
+//   - can use pdf.SetAlpha()
+// - new annotation for hammeron
+//   - don't need the whole chord, just the string and number
+//     and maybe an 'h' letter in the along sine annotation
+//   - ~3 or -3 would mean 'above the number' vs 3~ 3- meaning 'below'
+//   - still good to keep the existing 'whole chord hammeron'
+//     for any kind of hammeron containing more than one note
+// - move on-sine annotations to either the top or bottom if they
+//   directly intersect with a central-axis annotation
+// - create an amplitude decay factor (flag) allow for decays
+//   to happen in the middle of sine
+//    - also allow for pauses (no sine at all)
+// - use of sine instead of cos with different text hump pattern:   _
+//                                                                 / \_
+
 type singleAnnotatedSine struct {
 	hasPlaybackTime bool
 	pt              playbackTime
@@ -1742,8 +1749,7 @@ func determineLyricFontPt(
 	return float64(humpsChars) / charsToaHump, GetFontPt(fontHeight), nil
 }
 
-// TODO better name for this function
-func IsTopLineSine(lines []string) (sas singleAnnotatedSine, yesitis bool, err error) {
+func GetSASFromTopLines(lines []string) (sas singleAnnotatedSine, err error) {
 
 	// the annotated sine must come in 4 OR 5 Lines
 	//    ex.   desciption
@@ -1754,7 +1760,7 @@ func IsTopLineSine(lines []string) (sas singleAnnotatedSine, yesitis bool, err e
 	// 5)     00:03.14   (optional) playback time position
 
 	if len(lines) < 4 {
-		return sas, false, fmt.Errorf("improper number of input lines,"+
+		return sas, fmt.Errorf("improper number of input lines,"+
 			"want 4 have %v", len(lines))
 	}
 
@@ -1762,7 +1768,7 @@ func IsTopLineSine(lines []string) (sas singleAnnotatedSine, yesitis bool, err e
 	//_
 	// \_/
 	if !(strings.HasPrefix(lines[1], "_") && strings.HasPrefix(lines[2], " \\_/")) {
-		return sas, false, fmt.Errorf("first lines are not sine humps")
+		return sas, fmt.Errorf("first lines are not sine humps")
 	}
 
 	// get the playback time if it exists
@@ -1775,13 +1781,10 @@ func IsTopLineSine(lines []string) (sas singleAnnotatedSine, yesitis bool, err e
 		}
 	}
 
-	return sas, true, nil
+	return sas, nil
 }
 
 type playbackTime struct {
-	mins      uint8
-	secs      uint8
-	centiSecs uint8 // 1/100th of a second // TODO delete these 3 lines?
 	// string representation
 	//   mn:se.cs
 	// where
@@ -1840,11 +1843,8 @@ func getPlaybackTimeFromLine(line string) (pt playbackTime, ptCharPosition int, 
 	t := time.Time{}.Add(dur)
 
 	pt = playbackTime{
-		mins:      uint8(mins),
-		secs:      uint8(secs),
-		centiSecs: uint8(centiSecs),
-		str:       str,
-		t:         t,
+		str: str,
+		t:   t,
 	}
 
 	ptCharPosition = len(line) - len(strings.TrimLeft(line, " "))
@@ -1853,7 +1853,7 @@ func getPlaybackTimeFromLine(line string) (pt playbackTime, ptCharPosition int, 
 
 func (s singleAnnotatedSine) parseText(lines []string) (reduced []string, elem tssElement, err error) {
 
-	sas, _, err := IsTopLineSine(lines)
+	sas, err := GetSASFromTopLines(lines)
 	if err != nil {
 		return lines, elem, err
 	}
@@ -2078,8 +2078,17 @@ func (s singleAnnotatedSine) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 				tipY -= tipHover
 			}
 			// 45deg angles to the tip
-			pdf.Line(tipX-chhbs, tipY-chhbs, tipX, tipY)
-			pdf.Line(tipX, tipY, tipX+chhbs, tipY-chhbs)
+			if as.bolded { // draw a closed polygon instead of just lines
+				pts := []gofpdf.PointType{
+					{tipX - chhbs, tipY - chhbs},
+					{tipX + chhbs, tipY - chhbs},
+					{tipX, tipY},
+				}
+				pdf.Polygon(pts, "FD")
+			} else {
+				pdf.Line(tipX-chhbs, tipY-chhbs, tipX, tipY)
+				pdf.Line(tipX, tipY, tipX+chhbs, tipY-chhbs)
+			}
 		case '^':
 			tipX := xStart + eqX
 			tipY := yStart - eqY
@@ -2088,8 +2097,18 @@ func (s singleAnnotatedSine) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 				tipY += tipHover
 			}
 			// 45deg angles to the tip
-			pdf.Line(tipX-chhbs, tipY+chhbs, tipX, tipY)
-			pdf.Line(tipX, tipY, tipX+chhbs, tipY+chhbs)
+
+			if as.bolded { // draw a closed polygon instead of just lines
+				pts := []gofpdf.PointType{
+					{tipX - chhbs, tipY + chhbs},
+					{tipX + chhbs, tipY + chhbs},
+					{tipX, tipY},
+				}
+				pdf.Polygon(pts, "FD")
+			} else {
+				pdf.Line(tipX-chhbs, tipY+chhbs, tipX, tipY)
+				pdf.Line(tipX, tipY, tipX+chhbs, tipY+chhbs)
+			}
 		case '|':
 			x := xStart + eqX
 			pdf.Line(x, yStart-amplitude-chhbs, x, yStart+amplitude+chhbs)
