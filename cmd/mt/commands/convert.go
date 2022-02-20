@@ -13,10 +13,11 @@ import (
 // file commands
 var (
 	ConvertCmd = &cobra.Command{
-		Use:   "convert [amount] [unit] to [unit] <of> <material>",
-		Short: "convert arbitrary values between units",
-		Args:  cobra.RangeArgs(4, 6),
-		RunE:  convertCmd,
+		Use:     "convert [amount] [unit] to [unit] <of> <material>",
+		Short:   "convert arbitrary values between units",
+		Aliases: []string{"cv", "cvt"},
+		Args:    cobra.RangeArgs(4, 6),
+		RunE:    convertCmd,
 	}
 )
 
@@ -34,6 +35,8 @@ var (
 		"ml":            "mL",
 		"l":             "L",
 		"inch":          "in",
+		"mile":          "mi",
+		"miles":         "mi",
 		"sqft":          "ft^2",
 		"ft2":           "ft^2",
 		"sqm":           "m^2",
@@ -50,7 +53,7 @@ var (
 	}
 
 	// TODO add with reverse function for standard multiplier conversions
-	cvs = map[string]string{ // map[from_to_of]expr
+	cvs = map[string]string{ // map[from_to]expr
 		"C_F":                     "(a*1.8)+32",
 		"F_C":                     "(a-32)/1.8",
 		"g_ml_water":              "a",
@@ -62,6 +65,10 @@ var (
 		"hectare_sqft":            "a*107639.1",
 		"ft^2_hectare":            "a/107639.1",
 		"m_ft":                    "a*3.28084",
+		"km_mi":                   "a*0.6213712",
+		"mi_km":                   "a/0.6213712",
+		"m_km":                    "a/1000",
+		"km_m":                    "a*1000",
 		"m_mm":                    "a*1000",
 		"mm_m":                    "a/1000",
 		"ft_m":                    "a/3.28084",
