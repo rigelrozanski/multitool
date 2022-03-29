@@ -3,7 +3,9 @@ package commands
 import (
 	"fmt"
 	"os"
+	"strings"
 
+	"github.com/knetic/govaluate"
 	homedir "github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -13,8 +15,21 @@ var cfgFile string
 
 // RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
-	Use:   "mt",
+	Use:   "mt [expr]",
 	Short: "multitool, a collection of handy lil tools",
+	Args:  cobra.ArbitraryArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+
+		// calculate like math
+		argsJoined := strings.Join(args, "")
+		amountExpr, err := govaluate.NewEvaluableExpression(argsJoined)
+		if err != nil {
+			return err
+		}
+		amountI, err := amountExpr.Evaluate(nil)
+		fmt.Println(amountI.(float64))
+		return nil
+	},
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
