@@ -69,6 +69,8 @@ var (
 		"mi_km":                   "a/0.6213712",
 		"m_km":                    "a/1000",
 		"km_m":                    "a*1000",
+		"m_cm":                    "a*100",
+		"cm_m":                    "a/100",
 		"m_mm":                    "a*1000",
 		"mm_m":                    "a/1000",
 		"ft_m":                    "a/3.28084",
@@ -184,7 +186,7 @@ func getConversionExpression(from, to, of string) (exprStr string, err error) {
 	return convExpr, nil
 }
 
-func convertCmd(cmd *cobra.Command, args []string) error {
+func convertCmd(_ *cobra.Command, args []string) error {
 
 	amountStr, unitFrom, toArg, unitTo := args[0], args[1], args[2], args[3]
 	if toArg != "to" {

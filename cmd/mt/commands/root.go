@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -20,15 +21,33 @@ var RootCmd = &cobra.Command{
 	Args:  cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 
-		// calculate like math
+		// First attempt to calculate like math
+		var mathErr error
 		argsJoined := strings.Join(args, "")
 		amountExpr, err := govaluate.NewEvaluableExpression(argsJoined)
 		if err != nil {
-			return err
+			mathErr = err
 		}
-		amountI, err := amountExpr.Evaluate(nil)
-		fmt.Println(amountI.(float64))
-		return nil
+		if mathErr == nil {
+			amountI, err := amountExpr.Evaluate(map[string]interface{}{})
+			if err != nil {
+				mathErr = err
+			}
+			if mathErr == nil {
+				fmt.Println(amountI.(float64))
+				return nil
+			}
+		}
+
+		// Next attempt a conversion operation if correct args
+		if len(args) >= 4 && len(args) <= 6 {
+			err := convertCmd(nil, args)
+			if err == nil {
+				return nil
+			}
+		}
+
+		return errors.New("could not resolve command")
 	},
 }
 
