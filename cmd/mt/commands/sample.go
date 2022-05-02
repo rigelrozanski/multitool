@@ -5,10 +5,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/spf13/cobra"
-
 	"github.com/rigelrozanski/common"
 	"github.com/rigelrozanski/thranch/quac"
+	"github.com/spf13/cobra"
 )
 
 func init() {
